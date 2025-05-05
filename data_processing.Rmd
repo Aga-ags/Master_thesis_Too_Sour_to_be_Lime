@@ -1,0 +1,13 @@
+---
+title: "Data Processing"
+author: "Agnieszka Kubica"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+# Libararies
+```{r}
+library(tidyverse)
+```
+
