@@ -149,7 +149,7 @@ The same amount, so it was subset already.
 # Subset to relevant soil values
 ```{r filter_relevant_col}
 df_soil_selected <- df_soil_arable |>
-  dplyr::select(c("id", "x", "y", "horizon_number", "recording_year",  "depth_from_cm", "depth_to_cm", "survey_type") | contains("pH"))
+  dplyr::select(c("id", "x", "y", "horizon_number", "recording_year",  "depth_from_cm", "depth_to_cm", "survey_type", "lime_caco3") | contains("pH"))
 
 df_soil_selected
 
@@ -194,7 +194,7 @@ rmse
 On average the actual pH is 0.57 away from the site measure 
 
 ## Convert pH-H2O and site pH into pH-CaCl2
-```{r}
+```{r missing_pattern_pH,  fig.width = 14 fig.height=5}
 df_soil_selected_pH_conv <- df_soil_selected|>
   # CaCl2 is missing, try imputing from H2O
   mutate(`pH_CaCl2_imputed` = ifelse(is.na(`pH-CaCl2`), ifelse(is.na(`pH-H2O`), NA, `pH-H2O` - 0.7) ,`pH-CaCl2`), 
@@ -203,7 +203,9 @@ df_soil_selected_pH_conv <- df_soil_selected|>
   # make a new column indicating origin of pH value
          pH_origin = as.factor(ifelse(is.na(`pH-CaCl2`), ifelse(is.na(`pH-H2O`), ifelse(is.na(`pH_brightness`), NA, "site"), "H2O") , "CaCl2")))
 
-md.pattern(df_soil_selected_pH_conv, rotate.names = TRUE)
+df_soil_selected_pH_conv|>
+  dplyr::select(where(~ anyNA(.))) |>
+  md.pattern(rotate.names = TRUE)
 ```
 Extra 1249 pH measurements, to a total of 6879. In terms of sites that translates to: 
 
@@ -285,10 +287,20 @@ ggplot() +
   scale_colour_distiller(palette ="RdBu")
 ```
 
+
+# Standardizing the dataset
 ```{r}
 # removing other pH's
 df_soil_selected_pH_conv <- df_soil_selected_pH_conv%>%
-  dplyr::select(!c("pH-H2O", "pH-CaCl2", "pH_brightness", "horizon_number"))
+  dplyr::select(!c("pH-H2O", "pH-CaCl2", "pH_brightness", "horizon_number", "survey_type", "lime_caco3"))
+
+# removing still missing pH sites
+df_soil_selected_pH_conv <- df_soil_selected_pH_conv%>%
+  filter(is.na(pH_CaCl2_imputed) == FALSE)|>
+  rename(pH = pH_CaCl2_imputed)
+
+df_soil_selected_pH_conv
+length(unique(df_soil_selected_pH_conv[["id"]])) 
 ```
 
 
@@ -514,7 +526,6 @@ make_histograms <- function(df, variables_range){
   keep(is.numeric) %>% 
   dplyr::select(! contains("pH")) %>%
   dplyr::select(! contains("id")) %>%
-  dplyr::select(! c("x", "y")) %>%
   dplyr::select(all_of(variables_range)) %>%
   gather() %>% 
   ggplot(aes(value)) +
