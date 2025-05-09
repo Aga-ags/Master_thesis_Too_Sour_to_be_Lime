@@ -8,6 +8,581 @@ output: html_document
 
 # Libararies
 ```{r}
+library(mice)
 library(tidyverse)
+library(purrr)
+library(terra)
+library(sf)
 ```
+# Loading data
+```{r}
+df_soil_org <- read_csv("../data/ZH_nabodat_dataset_v1.0.csv")|>
+  mutate(across(contains("datum"), ~ as.Date(., format = "%d.%m.%Y")))|>
+  mutate(horizontbezeichnung = as.factor(horizontbezeichnung),
+         ausgangsinfo_horizontbezeichnung = as.factor(ausgangsinfo_horizontbezeichnung),
+         erhebungsart = as.factor(erhebungsart),
+         anonymisierung = as.factor(anonymisierung))
+
+# rename the columns to english names:
+colnames(df_soil_org) <- c("id", "canton", "x", "y", "anonymization", "recording_date", "survey_number", "survey_date", "survey_type","profile_id", "horizon_number", "depth_from_cm", "depth_to_cm", "horizon_name", "initial_info_horizon_name", "humus_content_percent", "clay_percent", "silt_percent", "sand_percent",  "gravel_volume_percent", "stones_volume_percent", "lime_caco3", "pH_brightness", "fine_grain_size", "clay_from_initial_info_proc", "clay_to_initial_info_proc", "silt_from_initial_info_proc", "silt_to_initial_info_proc", "sand_from_initial_info_proc", "sand_to_initial_info_proc",
+"skeletal_content", "skeletal_content_from_initial_info_vol_proc",
+"skeletal_content_to_initial_info_vol_proc", "version", "date", "id.rec", "lime", "pH-H2O", "pH-CaCl2", "humus", "Corg", "clay", "silt")
+
+df_soil_org <- df_soil_org|>
+  mutate(horizon_number = as.factor(horizon_number))|>
+  mutate(recording_year = format(as.Date(recording_date, format="%d/%m/%Y"),"%Y") )
+```
+# Initial data processing
+
+There is 3904 samples in general, with multiple horaizons per sample. But in a few sites the measurements are repeated (3952 unique horizon 1 measurements). However, all of the repeated samples are also annnymized. 
+
+```{r}
+# Step 1: Identify sites with multiple profiles
+multi_profile_sites <- df_soil_org %>%
+  group_by(id) %>%
+  summarise(n_profiles = n_distinct(profile_id)) %>%
+  filter(n_profiles > 1) %>%
+  pull(id)
+
+# Step 2: Subset the dataframe to only those sites
+df_soil_org %>%
+  filter(id %in% multi_profile_sites)|>
+  filter(anonymization == 0)
+```
+
+
+
+```{r}
+# ploting where annonymized points are located 
+df <- df_soil_org
+
+df_sf <- st_as_sf(df, coords = c("x", "y"), crs = 2056)  
+
+ggplot() +
+  geom_sf(data = df_sf, aes(color = anonymization)) +
+  labs(title = "Map of anonymization")
+```
+
+Unfortunately, the anonymized points are not equally distributed throughout the sampling place, but there is plenty of measurements around them.
+
+
+Remove annonmyzation points since they are too inaccurate: 
+```{r}
+length(unique(df_soil_org[["id"]]))
+annonymized_points <- df_soil_org|>
+  filter(anonymization == 1)
+length(unique(annonymized_points[["id"]]))
+
+
+df_soil <- df_soil_org|>
+  filter(anonymization == 0)
+```
+105 sites of 3904 are removed, to 3799.
+
+
+```{r}
+colnames(df_soil)
+
+head(df_soil)
+
+nrow(df_soil)
+```
+# Notes:
+All values are in the Zurich canton
+
+
+# EDA on original data
+```{r}
+summary(df_soil)
+```
+
+
+```{r}
+ggplot(df_soil, aes(x = survey_date))+
+geom_histogram()
+ggplot(df_soil, aes(x = recording_date))+
+geom_histogram()
+
+
+```
+The data spans from 1960 to 2000, with one point later on. All values are not from survey 1.  Survey and recording data are identical on this scale. 
+
+
+
+# Join with agriculture land use
+
+```{r}
+areable_land_raster <- terra::rast("../data/zh_arable_land_s3.tif")
+crs(areable_land_raster)  <- "epsg:2056"
+```
+
+```{r}
+plot(areable_land_raster)
+```
+```{r}
+# crs points
+points_vect_soil <- vect(df_soil, geom = c("x", "y"), crs = crs(areable_land_raster))
+vals <- extract(areable_land_raster, points_vect_soil)
+vals
+
+# join the raster values to soil df
+df_soil_areable_value <- df_soil %>%
+  mutate(ID_row = row_number()) %>%
+  left_join(vals, join_by("ID_row" == "ID"))
+
+df_soil_areable_value <- as.data.frame(df_soil_areable_value)
+
+df_soil_arable <- df_soil_areable_value %>%
+  filter(zh_arable_land_s3 == 1)|>
+  dplyr::select(!c("zh_arable_land_s3", "ID_row"))
+df_soil_arable
+```
+
+
+How many datapoints are there now?
+```{r}
+length(unique(df_soil_arable[["id"]]))
+```
+The same amount, so it was subset already. 
+
+
+# Subset to relevant soil values
+```{r filter_relevant_col}
+df_soil_selected <- df_soil_arable |>
+  dplyr::select(c("id", "x", "y", "horizon_number", "recording_year",  "depth_from_cm", "depth_to_cm", "survey_type") | contains("pH"))
+
+df_soil_selected
+
+length(unique(df_soil_selected[["id"]]))
+```
+
+
+## pH missings
+
+```{r}
+# plotting patterns of missingness in the pH values
+md.pattern(df_soil_selected, rotate.names = TRUE)
+
+df_soil_selected|>
+  filter(horizon_number == 1)|>
+  md.pattern(rotate.names = TRUE)
+```
+
+
+```{r}
+# from the original dataframe (with annonymized points) we can see that the relationships between site pH and CaCl2 is quite 1:1, with a small number of outliers.
+ggplot(data = df_soil_org, aes(x = `pH-CaCl2`, y = pH_brightness))+
+  geom_point()+
+  geom_abline(slope = 1, intercept = 0)
+```
+
+
+```{r}
+# Uncertaintity of 1 - 1 impuatation of site pH into CaCl2:
+
+correlation_pH <- cor(df_soil_org$pH_brightness, df_soil_org$`pH-CaCl2`, use = "complete.obs")
+correlation_pH
+
+pred_Ca_check <- df_soil_org|>
+  filter(!is.na(`pH-CaCl2`) & !is.na(pH_brightness))|>
+  select(`pH-CaCl2`, pH_brightness)
+
+rmse <- sqrt(mean((pred_Ca_check$`pH-CaCl2` - pred_Ca_check$pH_brightness)^2))
+rmse
+
+```
+On average the actual pH is 0.57 away from the site measure 
+
+## Convert pH-H2O and site pH into pH-CaCl2
+```{r}
+df_soil_selected_pH_conv <- df_soil_selected|>
+  # CaCl2 is missing, try imputing from H2O
+  mutate(`pH_CaCl2_imputed` = ifelse(is.na(`pH-CaCl2`), ifelse(is.na(`pH-H2O`), NA, `pH-H2O` - 0.7) ,`pH-CaCl2`), 
+  # CaCl2 is still missing, try imputing from site pH
+         `pH_CaCl2_imputed` = ifelse(is.na(`pH_CaCl2_imputed`), ifelse(is.na(pH_brightness), NA, pH_brightness) ,`pH_CaCl2_imputed`),
+  # make a new column indicating origin of pH value
+         pH_origin = as.factor(ifelse(is.na(`pH-CaCl2`), ifelse(is.na(`pH-H2O`), ifelse(is.na(`pH_brightness`), NA, "site"), "H2O") , "CaCl2")))
+
+md.pattern(df_soil_selected_pH_conv, rotate.names = TRUE)
+```
+Extra 1249 pH measurements, to a total of 6879. In terms of sites that translates to: 
+
+
+```{r}
+missing_ph_df <- df_soil_selected_pH_conv|>
+  group_by(id)|> 
+  mutate(pH_is_fully_na = is.na(pH_CaCl2_imputed),
+         site_ph_na = is.na(pH_brightness), 
+         h20_ph_na = is.na(`pH-H2O`), 
+         cacl2_ph_na = is.na(`pH-CaCl2`))
+```
+
+
+```{r}
+# Plotting missingness of pH
+
+ggplot(missing_ph_df, aes(x = recording_year, fill = pH_origin))+ 
+  geom_histogram(stat="count")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+# H20 collected exclusively in 1974 and 1975, starting from 1977 it is CaCl2, not lab pH earlier
+
+ggplot(missing_ph_df, aes(x = survey_type, fill = pH_origin))+ 
+  geom_bar(stat="count")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+# lab results of pH come only from C type surveys, the other only record site pH
+ggplot(missing_ph_df, aes(x = recording_year, fill = survey_type))+ 
+  geom_bar(stat="count")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+
+ggplot(missing_ph_df, aes(x = horizon_number, fill = pH_is_fully_na))+ 
+  geom_bar(stat="count", position="fill")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+# The amount of missing pH grows with horizons (or rather deph) because more material in which pH cannot be measured is encountered at lower horizons
+
+
+# Missingness of pH over time
+ggplot(missing_ph_df, aes(x = recording_year, fill = pH_is_fully_na))+ 
+  geom_histogram(stat="count")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+ggplot(missing_ph_df, aes(x = recording_year, fill = pH_is_fully_na))+ 
+   geom_bar( position="fill")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+# There seems to be no specific trend in missingness over time
+
+```
+```{r}
+missing_ph_df|> 
+  filter(survey_type == "U") 
+missing_ph_df|> 
+  filter(survey_type == "P") 
+```
+So, U only does site pH, while P H20 and site. 
+
+
+# Ploting pH 
+```{r}
+
+ggplot(missing_ph_df, aes(x = recording_year, y = pH_CaCl2_imputed))+ 
+  geom_point()
+```
+
+# spatial distribution of pH and pH missingness
+```{r}
+
+df_sf <- st_as_sf(missing_ph_df, coords = c("x", "y"), crs = 2056)  
+
+
+ggplot() +
+  geom_sf(data = df_sf, aes(color = pH_is_fully_na, alpha = 0.3)) +
+  labs(title = "Map of missing pH")
+
+df_sf|>
+  filter(pH_is_fully_na == FALSE)|>
+ggplot() +
+  geom_sf(aes(color = pH_CaCl2_imputed,  alpha = 0.3)) +
+  labs(title = "Map of pH values")+
+  scale_colour_distiller(palette ="RdBu")
+```
+
+```{r}
+# removing other pH's
+df_soil_selected_pH_conv <- df_soil_selected_pH_conv%>%
+  dplyr::select(!c("pH-H2O", "pH-CaCl2", "pH_brightness", "horizon_number"))
+```
+
+
+
+# Join with covariates 
+```{r}
+# points data
+
+df_soil_with_cov <- df_soil_selected_pH_conv%>%
+  mutate(ID_row = row_number())
+
+points_arable_soil <- vect(df_soil_with_cov, geom = c("x", "y"), crs = crs(areable_land_raster))
+
+points_arable_soil
+```
+
+
+
+```{r}
+# Set main folder path
+main_folder <- "../data/covariates/"
+
+# Get list of all .tif files in subfolders
+tif_files <- list.files(main_folder, pattern = "\\.tif$", recursive = TRUE, full.names = TRUE)
+
+# Apply function to each file
+join_covariates <- function(tif_file){
+  #load raster
+  raster_file <- terra::rast(tif_file)
+  crs(raster_file)  <- "epsg:2056"
+  
+  #extract values
+  vals <- extract(raster_file, points_arable_soil)
+  
+  # join the raster values to soil df
+  df_soil_with_cov <- df_soil_with_cov %>%
+  left_join(vals, join_by("ID_row" == "ID"))
+  
+  # if the file contains categorical -> mutate last column as factor
+  if (grepl("categoric", tif_file)) {
+  last_col_name <- names(df_soil_with_cov)[ncol(df_soil_with_cov)]
+  df_soil_with_cov <- df_soil_with_cov %>%
+    mutate(!!sym(last_col_name) := as.factor(.data[[last_col_name]]))
+  }
+  return(df_soil_with_cov)
+}
+
+for (file in tif_files) {
+  df_soil_with_cov <- join_covariates(file)
+}
+
+
+```
+
+```{r}
+df_soil_with_cov
+```
+
+
+# EDA 
+
+## Missing data
+
+```{r}
+df_soil_with_cov %>%
+  dplyr::select(where(~ anyNA(.))) %>%
+  dplyr::select(! contains("pH")) %>%
+  md.pattern(plot = TRUE, rotate.names = TRUE )
+```
+There is missingness among 5 covariates:  drainfor, feucht_wild, bedgwleiter, gwleiter, skfeucht. - the last 3 are maps that should be complete? Open maps, see what happens. Most liekly can be imputed if we find why is it missing - maybe nearest neighbor can work. 
+
+
+
+```{r}
+cov_missing_sf <- df_soil_with_cov|>
+  st_as_sf(coords = c("x", "y"), crs = 2056)  
+
+
+ggplot() +
+  geom_sf(data = cov_missing_sf, aes(color = is.na(drainfor), alpha = 0.3)) 
+
+
+ggplot() +
+  geom_sf(data = cov_missing_sf, aes(color = is.na(feucht_wild), alpha = 0.3)) 
+
+
+ggplot() +
+  geom_sf(data = cov_missing_sf, aes(color = is.na(bedgwleiter), alpha = 0.3)) 
+
+ggplot() +
+  geom_sf(data = cov_missing_sf, aes(color = is.na(gwleiter), alpha = 0.3)) 
+
+
+ggplot() +
+  geom_sf(data = cov_missing_sf, aes(color = is.na(skfeucht), alpha = 0.3)) 
+
+```
+Investigating the tiffs with missing data:
+
+```{r}
+# Set main folder path
+main_folder <- "../data/covariates/"
+
+mis_cov <- list("drainfor", "feucht_wild", "bedgwleiter", "gwleiter", "skfeucht")
+
+
+for (cov in mis_cov) {
+  tif_file <- paste0(main_folder, ifelse(cov == "drainfor", "numeric/", "categoric/"), cov, ".tif")
+  raster_file <- terra::rast(tif_file)
+  crs(raster_file) <- "epsg:2056"
+  
+  df_here <- df_soil_with_cov
+  
+  # Check which points are missing for this covariate
+  df_here$is_missing <- is.na(df_here[[cov]])
+  
+  df_here <- df_here|>
+    filter(is_missing == TRUE)
+  
+  # Convert to sf object
+  cov_missing_sf <- df_here |>
+    st_as_sf(coords = c("x", "y"), crs = 2056)
+  
+  # Plot raster
+  plot(raster_file, main = cov)
+  
+  # Add points, coloring by missingness
+  plot(st_geometry(cov_missing_sf), 
+       add = TRUE, 
+       col = ifelse(cov_missing_sf$is_missing, "red", "blue"), 
+       pch = 16)
+  
+  legend("topright", legend = c("Missing", "Present"), col = c("red", "blue"), pch = 16)
+}
+
+```
+
+So, drainfor is kind of randomly missing even though the entire raster is complete. 
+For feucht_wild and bedgwleiter - the raster is smaller than the bounding box of the studied points. 
+For gwleiter and skfeucht - there are NA values everywhere beyond the aquifers/moist areas, for the former I am not quite sure what to impute, for the latter just a 0 should be sufficient. 
+
+
+```{r}
+# imputing skflucht
+df_soil_with_cov <- df_soil_with_cov|>
+  mutate(skfeucht = ifelse(is.na(skfeucht), 0, skfeucht))
+```
+
+```{r}
+# impute drainfor
+
+points_sf <- df_soil_with_cov |>
+    st_as_sf(coords = c("x", "y"), crs = 2056)
+
+#raster file
+raster_file <- paste0(main_folder,  "numeric/", "drainfor", ".tif")
+raster_file <- terra::rast(raster_file)
+crs(raster_file) <- "epsg:2056"
+
+# Extract raster values at points
+point_vals <- terra::extract(raster_file, points_sf)
+
+# Identify missing indices
+missing_idx <- which(is.na(point_vals[[2]]))  # assuming second column holds the raster value
+
+# Get non-NA raster cells and their coordinates
+non_na_cells <- which(!is.na(values(raster_file)))
+non_na_coords <- xyFromCell(raster_file, non_na_cells)
+non_na_values <- values(raster_file)[non_na_cells]
+
+# Initialize imputed values vector
+imputed_values <- point_vals[[2]]
+
+for (i in missing_idx) {
+  # Get point coordinates
+  pt_coord <- st_coordinates(points_sf[i, ])
+  
+  # Compute distances to non-NA cells
+  dists <- sqrt((non_na_coords[,1] - pt_coord[1])^2 + (non_na_coords[,2] - pt_coord[2])^2)
+  
+  # Filter by radius (≤ 1000 units)
+  within_radius_idx <- which(dists <= 1000)
+  
+  if (length(within_radius_idx) > 0) {
+    # Impute using median of values within radius
+    imputed_values[i] <- median(non_na_values[within_radius_idx], na.rm = TRUE)
+  } else {
+    # Optional: if no neighbor within radius, leave as NA or use closest
+    closest_idx <- which.min(dists)
+    imputed_values[i] <- non_na_values[closest_idx]
+  }
+}
+
+# Add imputed values to points
+points_sf$imputed_raster_value <- imputed_values
+
+# Add the imputed values to original column
+points_sf <- points_sf|>
+  mutate(drainfor = ifelse(is.na(drainfor), imputed_raster_value, drainfor))|>
+  select(!c("imputed_raster_value"))
+
+df_soil_with_cov <- st_drop_geometry(points_sf)
+```
+
+
+```{r}
+df_soil_with_cov %>%
+  dplyr::select(where(~ anyNA(.))) %>%
+  dplyr::select(! contains("pH")) %>%
+  md.pattern(plot = TRUE, rotate.names = TRUE )
+```
+
+## Distributions
+
+```{r}
+colnames(df_soil_with_cov)
+```
+
+```{r}
+
+make_histograms <- function(df, variables_range){
+  df %>%
+  keep(is.numeric) %>% 
+  dplyr::select(! contains("pH")) %>%
+  dplyr::select(! contains("id")) %>%
+  dplyr::select(! c("x", "y")) %>%
+  dplyr::select(all_of(variables_range)) %>%
+  gather() %>% 
+  ggplot(aes(value)) +
+    facet_wrap(~ key, scales = "free") +
+    geom_histogram()
+}
+
+make_histograms(df_soil_with_cov, 1:25)
+make_histograms(df_soil_with_cov, 25:45)
+make_histograms(df_soil_with_cov, 45:65)
+make_histograms(df_soil_with_cov, 65:72)
+
+```
+
+Both right skewed, left skewed and normal distributions. 
+
+```{r}
+# Identify all factor columns
+factor_cols <- df_soil_with_cov %>% keep((is.factor)) %>% names()
+
+# Loop over factor columns and plot
+for (col in factor_cols) {
+  p <- ggplot(df_soil_with_cov, aes(x = .data[[col]])) +
+    geom_bar(fill = "steelblue") +
+    labs(title = paste("Distribution of", col), x = col, y = "Count") +
+    theme_minimal()
+  
+  print(p)  # Show plot
+}
+```
+
+
+
+Do we have non-normal distributions? 
+Do we have zero inflation? 
+
+## Corrections for non-normality
+
+
+## Correlations
+```{r correlation_plot, fig.width = 14}
+# Define your target variable
+target_var <- "pH-CaCl2"
+
+# Select numeric variables
+numeric_df <- df_soil_with_cov %>% select(where(is.numeric))
+
+# Compute correlations
+correlations <- numeric_df %>%
+  select(-all_of(target_var)) %>%
+  summarise(across(everything(), ~ cor(.x, numeric_df[[target_var]], use = "complete.obs"))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "correlation")
+
+# Plot correlations
+ggplot(correlations, aes(x = reorder(variable, correlation), y = correlation)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = paste("Correlation of", target_var, "with Other Variables"),
+       x = "Variable", y = "Correlation") +
+  theme_minimal()
+```
+
+
+
+## Spatial distribution plots 
+
+
+Clear spatial trends in where ph is missing and where ph is low/high. 
+
+## Study area - size
 
