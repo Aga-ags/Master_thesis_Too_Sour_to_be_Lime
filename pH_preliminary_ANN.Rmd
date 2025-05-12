@@ -1,0 +1,49 @@
+---
+title: "pH ANN"
+author: "Agnieszka Kubica"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r libraries}
+library(dplyr)
+library(keras)
+library(sf)
+set.seed(144)
+```
+
+# Load and split data 
+```{r load_data}
+df <- readRDS(file="../data/processed_data.Rda")
+df
+```
+
+```{r}
+#create ID column
+df$id_row <- 1:nrow(df)
+
+#use 20% of dataset as test set 
+train <- df %>% dplyr::sample_frac(0.80)
+subset  <- dplyr::anti_join(df, train, by = 'id_row')
+
+validation <- subset %>% dplyr::sample_frac(0.50)
+test <- dplyr::anti_join(subset, validation, by = 'id_row')
+```
+
+## Investigate the representatives of test sample:
+```{r}
+test_sf <- st_as_sf(test, coords = c("x", "y"), crs = 2056)  
+plot(test_sf)
+```
+
+
+
+
+## Encode categorical variables
+```{r}
+to_categorical()
+```
+
+
+
+

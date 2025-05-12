@@ -13,6 +13,7 @@ library(tidyverse)
 library(purrr)
 library(terra)
 library(sf)
+library(obliquer)
 ```
 # Loading data
 ```{r}
@@ -30,7 +31,7 @@ colnames(df_soil_org) <- c("id", "canton", "x", "y", "anonymization", "recording
 
 df_soil_org <- df_soil_org|>
   mutate(horizon_number = as.factor(horizon_number))|>
-  mutate(recording_year = format(as.Date(recording_date, format="%d/%m/%Y"),"%Y") )
+  mutate(recording_year = as.numeric(format(as.Date(recording_date, format="%d/%m/%Y"),"%Y") ))
 ```
 # Initial data processing
 
@@ -288,7 +289,7 @@ ggplot() +
 ```
 
 
-# Standardizing the dataset
+# Cleaning up the dataset
 ```{r}
 # removing other pH's
 df_soil_selected_pH_conv <- df_soil_selected_pH_conv%>%
@@ -351,6 +352,9 @@ join_covariates <- function(tif_file){
 for (file in tif_files) {
   df_soil_with_cov <- join_covariates(file)
 }
+
+df_soil_with_cov<- df_soil_with_cov|>
+  select(-ID_row)
 
 
 ```
@@ -502,7 +506,10 @@ points_sf <- points_sf|>
   mutate(drainfor = ifelse(is.na(drainfor), imputed_raster_value, drainfor))|>
   select(!c("imputed_raster_value"))
 
-df_soil_with_cov <- st_drop_geometry(points_sf)
+no_geometry <- points_sf %>%
+  st_drop_geometry()
+
+df_soil_with_cov <- cbind(no_geometry, data.frame(st_coordinates(points_sf[,1])))
 ```
 
 
@@ -542,6 +549,14 @@ make_histograms(df_soil_with_cov, 65:72)
 
 Both right skewed, left skewed and normal distributions. 
 
+## standardize all continious variables
+```{r}
+df_soil_with_cov <- df_soil_with_cov %>% 
+  mutate(across(where(is.numeric) & !any_of(c("id","X", "Y", "depth_from_cm", "depth_to_cm", "pH")), ~ as.numeric(scale(.))))
+```
+
+
+
 ```{r}
 # Identify all factor columns
 factor_cols <- df_soil_with_cov %>% keep((is.factor)) %>% names()
@@ -568,7 +583,7 @@ Do we have zero inflation?
 ## Correlations
 ```{r correlation_plot, fig.width = 14}
 # Define your target variable
-target_var <- "pH-CaCl2"
+target_var <- "pH"
 
 # Select numeric variables
 numeric_df <- df_soil_with_cov %>% select(where(is.numeric))
@@ -596,4 +611,68 @@ ggplot(correlations, aes(x = reorder(variable, correlation), y = correlation)) +
 Clear spatial trends in where ph is missing and where ph is low/high. 
 
 ## Study area - size
+
+
+
+## Add oblique geographic coordinates
+
+Used source to cite: https://github.com/anbm-dk/obliquer/blob/main/README.md 
+
+```{r OBCs}
+# creating the oblique geographic coordinates based on a raster
+
+my_cov <- terra::rast("../data/covariates/numeric/drumdist.tif")#terra Spat Raster
+crs(my_cov) <- "EPSG:2056"
+ogcs <- obliquify(my_cov, 10) #drastic increase in prediction performace stoped around here for most models
+ogcs
+```
+
+```{r}
+# add the OBCs to dataframe
+points_for_rotation <- df_soil_with_cov|>
+  vect(geom = c("X", "Y"), crs = "EPSG:2056")
+
+data_with_OBCs <- extract(ogcs, points_for_rotation, bind = TRUE)
+data_with_OBCs_values <- values(data_with_OBCs)
+
+data_with_OBCs
+
+```
+
+```{r}
+#add standard coordinates to make plotting easier
+processed_data <- cbind(data_with_OBCs_values, crds(data_with_OBCs, df=TRUE, list=FALSE))
+```
+
+
+## Point values at depths
+
+```{r}
+# Convert depth_from_cm, depth_to_cm to depth (including from, to and average) column per site
+processed_data <- processed_data |>
+  mutate(depth_avr = (depth_from_cm + depth_to_cm)/2)|>
+  pivot_longer(cols = c("depth_avr", "depth_to_cm", "depth_from_cm"), 
+               names_to = "type_depth", 
+               values_to = "depth")|>
+  select(-"type_depth", -"id")|>
+  #change order of columns
+  select("pH", "pH_origin", "depth", "x", "y", "recording_year", everything())
+
+processed_data
+```
+
+
+## Save the data
+```{r}
+complete_df <- processed_data[complete.cases(processed_data), ]
+colnames(complete_df)
+complete_df
+```
+
+```{r}
+write.csv(processed_data,file='../data/processed_data.csv', row.names=FALSE)
+saveRDS(processed_data, file="../data/processed_data.Rda")
+```
+
+
 
