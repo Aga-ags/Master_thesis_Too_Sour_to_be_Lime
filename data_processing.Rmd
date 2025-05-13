@@ -670,8 +670,8 @@ complete_df
 ```
 
 ```{r}
-write.csv(processed_data,file='../data/processed_data.csv', row.names=FALSE)
-saveRDS(processed_data, file="../data/processed_data.Rda")
+write.csv(complete_df,file='../data/processed_data.csv', row.names=FALSE)
+saveRDS(complete_df, file="../data/processed_data.Rda")
 ```
 
 

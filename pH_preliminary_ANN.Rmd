@@ -8,16 +8,28 @@ output: html_document
 ```{r libraries}
 library(dplyr)
 library(keras)
+#install_keras()
 library(sf)
+library(tableone)
+library(recipes)
 set.seed(144)
 ```
 
-# Load and split data 
+# Load data 
 ```{r load_data}
 df <- readRDS(file="../data/processed_data.Rda")
 df
 ```
+## One code encoding for categorical 
+```{r}
+recipe_obj <- recipe(~ ., data = df) %>%
+  step_dummy(all_nominal() &!any_of(c("pH_origin")), one_hot = TRUE) %>%
+  prep()
 
+one_hot_df <- bake(recipe_obj, new_data = NULL)
+```
+
+## Split data
 ```{r}
 #create ID column
 df$id_row <- 1:nrow(df)
@@ -28,22 +40,73 @@ subset  <- dplyr::anti_join(df, train, by = 'id_row')
 
 validation <- subset %>% dplyr::sample_frac(0.50)
 test <- dplyr::anti_join(subset, validation, by = 'id_row')
+
+df$split <- ifelse(df$id_row %in% train$id_row, "Train",
+                   ifelse(df$id_row %in% test$id_row, "Test", "Validation"))
 ```
 
 ## Investigate the representatives of test sample:
 ```{r}
 test_sf <- st_as_sf(test, coords = c("x", "y"), crs = 2056)  
-plot(test_sf)
+train_sf <- st_as_sf(train, coords = c("x", "y"), crs = 2056)
+df_sf <- st_as_sf(df, coords = c("x", "y"), crs = 2056)
+
+plot(st_geometry(df_sf), col = 'grey', main = "Train vs Test spatial distribution")
+plot(st_geometry(train_sf), col = 'blue', add = TRUE)
+plot(st_geometry(test_sf), col = 'red', add = TRUE)
+legend("bottomright", legend = c("All", "Train", "Test"), col = c("grey", "blue", "red"), pch = 1)
 ```
 
-
-
-
-## Encode categorical variables
 ```{r}
-to_categorical()
+columns <- df|>
+  select(-"x", -"y", - "split", -"id_row")|>
+  colnames()
+CreateTableOne(vars =columns, strata = "split", data = df)
 ```
 
 
+
+# Feed forward neural network trianing
+
+
+```{r}
+x_train <- train|>
+  select(!c("pH", "pH_origin", "x", "y", "id_row"))|>
+  as.matrix()
+y_train <- train$pH
+
+x_valid <- validation|>
+  select(!c("pH", "pH_origin", "x", "y", "id_row"))|>
+  as.matrix()
+y_valid  <- validation$pH
+```
+
+```{r model_architecture}
+model <- keras_model_sequential() %>%
+  layer_dense(units = 10, activation = "relu", input_shape = ncol(train_x)) %>%
+  layer_dense(units = 5, activation = "relu") %>%
+  layer_dense(units = 1)%>%
+  
+  # backpropagation
+  compile(
+    optimizer = "rmsprop",
+    loss = "mse",
+    metrics = c("mae")
+  )
+
+# train our model
+learn <- model %>% fit(
+  x = train_x,
+  y = train_y,
+  epochs = 25,
+  batch_size = 32,
+  validation_split = .2,
+  verbose = FALSE
+)
+
+learn
+
+plot(learn)
+```
 
 
