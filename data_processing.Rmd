@@ -17,15 +17,15 @@ library(obliquer)
 ```
 # Loading data
 ```{r}
-df_soil_org <- read_csv("../data/ZH_nabodat_dataset_v1.0.csv")|>
+df_org <- read_csv("../data/ZH_nabodat_dataset_v1.0.csv")|>
   mutate(across(contains("datum"), ~ as.Date(., format = "%d.%m.%Y")))|>
   mutate(horizontbezeichnung = as.factor(horizontbezeichnung),
          ausgangsinfo_horizontbezeichnung = as.factor(ausgangsinfo_horizontbezeichnung),
          erhebungsart = as.factor(erhebungsart),
          anonymisierung = as.factor(anonymisierung))
-
+df_soil_org<-df_org
 # rename the columns to english names:
-colnames(df_soil_org) <- c("id", "canton", "x", "y", "anonymization", "recording_date", "survey_number", "survey_date", "survey_type","profile_id", "horizon_number", "depth_from_cm", "depth_to_cm", "horizon_name", "initial_info_horizon_name", "humus_content_percent", "clay_percent", "silt_percent", "sand_percent",  "gravel_volume_percent", "stones_volume_percent", "lime_caco3", "pH_brightness", "fine_grain_size", "clay_from_initial_info_proc", "clay_to_initial_info_proc", "silt_from_initial_info_proc", "silt_to_initial_info_proc", "sand_from_initial_info_proc", "sand_to_initial_info_proc",
+colnames(df_soil_org) <- c("id", "canton", "x", "y", "anonymization", "recording_date", "survey_number", "survey_date", "survey_type","profile_id", "horizon_number", "depth_from_cm", "depth_to_cm", "horizon_name", "initial_info_horizon_name", "humus_content_percent", "clay_percent", "silt_percent", "sand_percent",  "gravel_volume_percent", "stones_volume_percent", "lime_site", "pH_brightness", "fine_grain_size", "clay_from_initial_info_proc", "clay_to_initial_info_proc", "silt_from_initial_info_proc", "silt_to_initial_info_proc", "sand_from_initial_info_proc", "sand_to_initial_info_proc",
 "skeletal_content", "skeletal_content_from_initial_info_vol_proc",
 "skeletal_content_to_initial_info_vol_proc", "version", "date", "id.rec", "lime", "pH-H2O", "pH-CaCl2", "humus", "Corg", "clay", "silt")
 
@@ -33,6 +33,10 @@ df_soil_org <- df_soil_org|>
   mutate(horizon_number = as.factor(horizon_number))|>
   mutate(recording_year = as.numeric(format(as.Date(recording_date, format="%d/%m/%Y"),"%Y") ))
 ```
+```{r}
+colnames(df_org)
+```
+
 # Initial data processing
 
 There is 3904 samples in general, with multiple horaizons per sample. But in a few sites the measurements are repeated (3952 unique horizon 1 measurements). However, all of the repeated samples are also annnymized. 
@@ -150,7 +154,7 @@ The same amount, so it was subset already.
 # Subset to relevant soil values
 ```{r filter_relevant_col}
 df_soil_selected <- df_soil_arable |>
-  dplyr::select(c("id", "x", "y", "horizon_number", "recording_year",  "depth_from_cm", "depth_to_cm", "survey_type", "lime_caco3") | contains("pH"))
+  dplyr::select(c("id", "x", "y", "horizon_number", "recording_year",  "depth_from_cm", "depth_to_cm", "survey_type", "lime", "lime_site") | contains("pH"))
 
 df_soil_selected
 
@@ -165,7 +169,6 @@ length(unique(df_soil_selected[["id"]]))
 md.pattern(df_soil_selected, rotate.names = TRUE)
 
 df_soil_selected|>
-  filter(horizon_number == 1)|>
   md.pattern(rotate.names = TRUE)
 ```
 
@@ -207,8 +210,99 @@ df_soil_selected_pH_conv <- df_soil_selected|>
 df_soil_selected_pH_conv|>
   dplyr::select(where(~ anyNA(.))) |>
   md.pattern(rotate.names = TRUE)
+
+df_soil_selected_pH_conv|>
+  dplyr::select(where(~ anyNA(.))) |>
+  dplyr::select("pH_CaCl2_imputed", "lime", "lime_site")|>
+  md.pattern(rotate.names = TRUE)
 ```
 Extra 1249 pH measurements, to a total of 6879. In terms of sites that translates to: 
+
+```{r}
+df_soil_selected_pH_conv|>
+  mutate(lime_mis = is.na(lime_site))|>
+ggplot(aes(x = lime_mis, y = pH_CaCl2_imputed))+
+  geom_point()
+```
+
+```{r}
+# relationship between lime in lab and site
+df_soil_selected_pH_conv|>
+  ggplot(aes(x = lime, y = lime_site))+
+  geom_point()
+```
+
+```{r}
+# pH and lime relationship in sample
+df_soil_selected_pH_conv|>
+  ggplot(aes(x = pH_CaCl2_imputed, y = lime_site))+
+  geom_point()
+
+df_soil_selected_pH_conv|>
+  ggplot(aes(x = pH_CaCl2_imputed, y = lime))+
+  geom_point()
+
+df_soil_selected_pH_conv|>
+  ggplot(aes(x = pH_CaCl2_imputed, y = lime))+
+  geom_bin2d()
+
+df_soil_selected_pH_conv|>
+  mutate(lime_mis = is.na(lime))|>
+  filter(pH_CaCl2_imputed <6.5 & lime_mis == TRUE)|>
+  nrow()
+df_soil_selected_pH_conv|>
+  mutate(lime_mis = is.na(lime))|>
+  filter(pH_CaCl2_imputed <6 & lime_mis == TRUE)|>
+  nrow()
+
+df_soil_selected_pH_conv|>
+  dplyr::select(where(~ anyNA(.))) |>
+  dplyr::select("pH_CaCl2_imputed", "lime", "lime_site")|>
+  filter(pH_CaCl2_imputed >=6)|>
+  md.pattern(rotate.names = TRUE)
+df_soil_selected_pH_conv|>
+  dplyr::select(where(~ anyNA(.))) |>
+  dplyr::select("pH_CaCl2_imputed", "lime", "lime_site")|>
+  filter(pH_CaCl2_imputed >=6.5)|>
+  md.pattern(rotate.names = TRUE)
+```
+
+# impute lime
+```{r}
+# distribution of lime pre imputation
+df_soil_selected_pH_conv|>
+  ggplot(aes(x = lime))+
+  geom_histogram()
+
+# impute lime
+df_soil_selected_pH_conv <- df_soil_selected_pH_conv|>
+  mutate(lime = ifelse(pH_CaCl2_imputed < 6.5 & is.na(lime), 0, lime), 
+         lime_imputed = ifelse(pH_CaCl2_imputed < 6.5 & is.na(lime), TRUE, FALSE))
+  
+
+# post vizualization: 
+
+df_soil_selected_pH_conv|>
+  ggplot(aes(x = pH_CaCl2_imputed, y = lime))+
+  geom_point(alpha = 0.5)
+
+df_soil_selected_pH_conv|>
+  ggplot(aes(x = lime))+
+  geom_histogram()
+
+df_soil_selected_pH_conv|>
+  dplyr::select(where(~ anyNA(.))) |>
+  dplyr::select("pH_CaCl2_imputed", "lime", "lime_site")|>
+  md.pattern(rotate.names = TRUE)
+
+
+# remove rows with missing lime
+df_soil_selected_pH_conv <- df_soil_selected_pH_conv|>
+  filter(!is.na(lime))|>
+  select(-"lime_site")
+
+
+```
 
 
 ```{r}
@@ -289,11 +383,11 @@ ggplot() +
 ```
 
 
-# Cleaning up the dataset
+# Select relevant soil variables
 ```{r}
 # removing other pH's
 df_soil_selected_pH_conv <- df_soil_selected_pH_conv%>%
-  dplyr::select(!c("pH-H2O", "pH-CaCl2", "pH_brightness", "horizon_number", "survey_type", "lime_caco3"))
+  dplyr::select(!c("pH-H2O", "pH-CaCl2", "pH_brightness", "horizon_number", "survey_type"))
 
 # removing still missing pH sites
 df_soil_selected_pH_conv <- df_soil_selected_pH_conv%>%
@@ -366,7 +460,7 @@ df_soil_with_cov
 
 # EDA 
 
-## Missing data
+## Missing data in covariates
 
 ```{r}
 df_soil_with_cov %>%
@@ -447,13 +541,14 @@ For feucht_wild and bedgwleiter - the raster is smaller than the bounding box of
 For gwleiter and skfeucht - there are NA values everywhere beyond the aquifers/moist areas, for the former I am not quite sure what to impute, for the latter just a 0 should be sufficient. 
 
 
-```{r}
+```{r imp_skflucht_and_gwleiter}
 # imputing skflucht
 df_soil_with_cov <- df_soil_with_cov|>
-  mutate(skfeucht = ifelse(is.na(skfeucht), 0, skfeucht))
+  mutate(skfeucht = ifelse(is.na(skfeucht), 0, skfeucht),
+         gwleiter = ifelse(is.na(gwleiter), 0, gwleiter))
 ```
 
-```{r}
+```{r imp_drainfor}
 # impute drainfor
 
 points_sf <- df_soil_with_cov |>
@@ -656,7 +751,7 @@ processed_data <- processed_data |>
                values_to = "depth")|>
   select(-"type_depth", -"id")|>
   #change order of columns
-  select("pH", "pH_origin", "depth", "x", "y", "recording_year", everything())
+  select("pH", "pH_origin", "depth", "x", "y", "lime", "lime_imputed", "recording_year", everything())
 
 processed_data
 ```
