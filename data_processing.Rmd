@@ -545,7 +545,9 @@ For gwleiter and skfeucht - there are NA values everywhere beyond the aquifers/m
 # imputing skflucht
 df_soil_with_cov <- df_soil_with_cov|>
   mutate(skfeucht = ifelse(is.na(skfeucht), 0, skfeucht),
-         gwleiter = ifelse(is.na(gwleiter), 0, gwleiter))
+         gwleiter = ifelse(is.na(gwleiter), 0, gwleiter),
+         feucht_wild =  ifelse(is.na(feucht_wild), 0, feucht_wild), 
+          bedgwleiter  = ifelse(is.na(bedgwleiter), 0, bedgwleiter))
 ```
 
 ```{r imp_drainfor}
@@ -608,11 +610,11 @@ df_soil_with_cov <- cbind(no_geometry, data.frame(st_coordinates(points_sf[,1]))
 ```
 
 
+
 ```{r}
 df_soil_with_cov %>%
-  dplyr::select(where(~ anyNA(.))) %>%
   dplyr::select(! contains("pH")) %>%
-  md.pattern(plot = TRUE, rotate.names = TRUE )
+  md.pattern(plot = FALSE, rotate.names = TRUE )
 ```
 
 ## Distributions
@@ -642,15 +644,7 @@ make_histograms(df_soil_with_cov, 65:72)
 
 ```
 
-Both right skewed, left skewed and normal distributions. 
-
-## standardize all continious variables
-```{r}
-df_soil_with_cov <- df_soil_with_cov %>% 
-  mutate(across(where(is.numeric) & !any_of(c("id","X", "Y", "depth_from_cm", "depth_to_cm", "pH")), ~ as.numeric(scale(.))))
-```
-
-
+Both right skewed, left skewed and normal distributions. No drastic distributions. 
 
 ```{r}
 # Identify all factor columns
@@ -666,14 +660,6 @@ for (col in factor_cols) {
   print(p)  # Show plot
 }
 ```
-
-
-
-Do we have non-normal distributions? 
-Do we have zero inflation? 
-
-## Corrections for non-normality
-
 
 ## Correlations
 ```{r correlation_plot, fig.width = 14}
@@ -755,6 +741,52 @@ processed_data <- processed_data |>
 
 processed_data
 ```
+
+
+## standardize all continious variables
+
+```{r}
+# Create an empty data frame to store mean and sd
+scaling_params <- data.frame(
+  variable = character(),
+  mean = numeric(),
+  sd = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Define the variables to scale
+vars_to_scale <- processed_data %>%
+  select(where(is.numeric), -any_of(c("x", "y", "pH", "id"))) %>%
+  names()
+
+# Scale variables and store mean/sd
+for (var in vars_to_scale) {
+  scaled_values <- scale(processed_data[[var]])
+  
+  # Overwrite the column with scaled values
+  processed_data[[var]] <- as.numeric(scaled_values)
+  
+  # Extract mean and sd from attributes
+  var_mean <- attr(scaled_values, "scaled:center")
+  var_sd <- attr(scaled_values, "scaled:scale")
+  
+  # Add to the results dataframe
+  scaling_params <- rbind(
+    scaling_params,
+    data.frame(variable = var, mean = var_mean, sd = var_sd)
+  )
+}
+
+processed_data <- as.data.frame(processed_data)
+# Results
+print(scaling_params)
+print(processed_data)
+
+# Optional: write to CSV
+write.csv(scaling_params, "scaling_parameters.csv", row.names = FALSE)
+
+```
+
 
 
 ## Save the data
