@@ -5,17 +5,7 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-```{r}
-install.packages("keras")
-reticulate::install_miniconda()
-keras::install_keras()
-```
 
-```{r}
-library(tensorflow)
-library(keras)
-library(tidyverse)
-```
 
 ```{r libraries}
 library(dplyr)
@@ -111,10 +101,12 @@ x_valid <- validation|>
 y_valid  <- validation$pH
 ```
 
-```{r model_architecture}
-pH_model <- keras_model_sequential() %>%
-  layer_dense(units = 1)
-summary(pH_models)
+```{r}
+write.csv(x_train,file='../data/x_train.csv', row.names=FALSE)
+write.csv(y_train,file='../data/y_train.csv', row.names=FALSE)
+write.csv(x_valid,file='../data/x_valid.csv', row.names=FALSE)
+write.csv(y_valid,file='../data/y_valid.csv', row.names=FALSE)
 ```
+
 
 
