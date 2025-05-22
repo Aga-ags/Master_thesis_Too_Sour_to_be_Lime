@@ -14,6 +14,7 @@ library(purrr)
 library(terra)
 library(sf)
 library(obliquer)
+set.seed(142)
 ```
 # Loading data
 ```{r}
@@ -239,7 +240,7 @@ df_soil_selected_pH_conv|>
   geom_point()
 
 df_soil_selected_pH_conv|>
-  ggplot(aes(x = pH_CaCl2_imputed, y = lime))+
+  ggplot(aes(x = pH_CaCl2_imputed, y = lime, colour = pH_origin, alpha = 0.5))+
   geom_point()
 
 df_soil_selected_pH_conv|>
@@ -266,6 +267,138 @@ df_soil_selected_pH_conv|>
   filter(pH_CaCl2_imputed >=6.5)|>
   md.pattern(rotate.names = TRUE)
 ```
+# pH and lime relationships in entire Switzerland 
+```{r}
+# load entirety of Switzerland
+df_swiss <- read_csv("../data/CH_SamplesArableLand_V2.csv")|>
+  mutate(across(contains("datum"), ~ as.Date(., format = "%d.%m.%Y")))|>
+  mutate(horizontbezeichnung = as.factor(horizontbezeichnung),
+         ausgangsinfo_horizontbezeichnung = as.factor(ausgangsinfo_horizontbezeichnung),
+         erhebungsart = as.factor(erhebungsart),
+         anonymisierung = as.factor(anonymisierung))|>
+  rename(
+    lime = Kalk,
+    lime_site = kalk_caco3,
+    pH_brightness = ph_hellige
+  )
+df_swiss
+
+
+df_swiss <- df_swiss|>
+# convert pH's into one
+  # CaCl2 is missing, try imputing from H2O
+  mutate(`pH_CaCl2_imputed` = ifelse(is.na(`pH-CaCl2`), ifelse(is.na(`pH-H2O`), NA, `pH-H2O` - 0.7) ,`pH-CaCl2`), 
+  # CaCl2 is still missing, try imputing from site pH
+         `pH_CaCl2_imputed` = ifelse(is.na(`pH_CaCl2_imputed`), ifelse(is.na(pH_brightness), NA, pH_brightness) ,`pH_CaCl2_imputed`),
+  # make a new column indicating origin of pH value
+         pH_origin = as.factor(ifelse(is.na(`pH-CaCl2`), ifelse(is.na(`pH-H2O`), ifelse(is.na(`pH_brightness`), NA, "site"), "H2O") , "CaCl2")),
+  lime_site = as.factor(lime_site))|>
+    dplyr::select(c("lime", "lime_site", "pH_CaCl2_imputed", "pH_origin"))
+
+df_swiss
+```
+```{r}
+
+ggplot(df_swiss, aes(x = pH_CaCl2_imputed))+
+  geom_boxplot()
+
+df_swiss <- df_swiss|>
+  filter(pH_CaCl2_imputed < 15)
+
+ggplot(df_swiss, aes(x = pH_CaCl2_imputed, fill = pH_origin))+
+  geom_histogram()
+
+
+```
+
+```{r vizualize_lime_pH_in_Switzerland}
+# lab lime and pH
+df_swiss|>
+  ggplot(aes(x = pH_CaCl2_imputed, y = lime, colour = pH_origin, alpha = 0.5))+
+  geom_point()+
+  geom_vline(xintercept = 6.5)+
+  geom_vline(xintercept = 6)
+
+df_swiss|>
+  ggplot(aes(x = pH_CaCl2_imputed, y = lime))+
+  geom_bin2d(bins = 70) +
+  geom_vline(xintercept = 6.5)+
+  geom_vline(xintercept = 6)+
+  scale_fill_continuous(type = "viridis")
+
+df_swiss|>
+  filter(pH_CaCl2_imputed < 6.5)|>
+  ggplot(aes(x = lime))+
+  geom_histogram()+
+  ggtitle("Distribution of lime for pH below 6.5")
+
+df_swiss|>
+  filter(pH_CaCl2_imputed < 6.5)|>
+  ggplot(aes(x = lime))+
+  geom_boxplot()+
+  ggtitle("Distribution of lime for pH below 6.5")
+
+# lime classes and pH and lab lime
+
+df_swiss|>
+  ggplot(aes(y = pH_CaCl2_imputed, x = lime_site))+
+  geom_boxplot()+
+  geom_hline(yintercept = 6.5)
+
+df_swiss|>
+  ggplot(aes(y = lime, x = lime_site))+
+  geom_boxplot()
+
+# distribution of lime
+df_swiss|>
+  filter(lime_site %in% c("3", "4", "5"))|>
+  ggplot(aes(x = lime))+
+  geom_histogram()+
+  facet_wrap(vars(lime_site))
+
+# distribution of log lime
+df_swiss|>
+  filter(lime_site %in% c("3", "4", "5"))|>
+  ggplot(aes(x = log(lime+1)))+
+  geom_histogram()+
+  facet_wrap(vars(lime_site))
+
+
+```
+```{r}
+# normality tests for default and log transformed lime:
+perform_normality_test <- function(lime_class, log_transform){
+  lime_values <- df_swiss |>
+    filter(lime_site == lime_class & !is.na(lime)) |>
+    mutate(lime = if (log_transform) log(lime + 1) else lime) |>
+    pull(lime)
+  shapiro.test(lime_values)
+  }
+
+# H0: data is normally distributed 
+
+perform_normality_test(lime_class = 3, log_transform = FALSE)
+perform_normality_test(lime_class = 4, log_transform = FALSE)
+perform_normality_test(lime_class = 5, log_transform = FALSE)
+
+perform_normality_test(lime_class = 3, log_transform = TRUE)
+perform_normality_test(lime_class = 4, log_transform = TRUE)
+perform_normality_test(lime_class = 5, log_transform = TRUE)
+```
+
+
+
+
+```{r estimate_normal_dist}
+# Normal distributions parameters of classes 3,4 and 5. 
+df_norm_estimate <- df_swiss|>
+  filter(lime_site %in% c("3", "4", "5") & ! is.na(lime))|>
+  group_by(lime_site)|>
+  summarise(log_mean_lime = mean(log(lime+ 0.01)), log_sd_lime = sd((log(lime+1))))
+
+df_norm_estimate
+```
+
 
 # impute lime
 ```{r}
@@ -276,18 +409,31 @@ df_soil_selected_pH_conv|>
 
 # impute lime
 df_soil_selected_pH_conv <- df_soil_selected_pH_conv|>
-  mutate(lime = ifelse(pH_CaCl2_imputed < 6.5 & is.na(lime), 0, lime), 
-         lime_imputed = ifelse(pH_CaCl2_imputed < 6.5 & is.na(lime), TRUE, FALSE))
+  merge(y= df_norm_estimate, by="lime_site", all.x=TRUE)|>
+  mutate(
+    # this indication of whether lime is imputed is okey, because all values that will stay NA will be removed later on
+    lime_imputed = is.na(lime),
+    lime = 
+           # is lime na: 
+           ifelse(!is.na(lime), lime,
+                  # is pH below 6.5:
+                  ifelse (pH_CaCl2_imputed < 6.5, 0, 
+                          # is lime_site observed
+                          ifelse(is.na(lime_site), lime, 
+                                       # is lime class less than 3
+                                       ifelse(lime_site < 3, 0,
+                                              # draw from random distribution of class 3:
+                                              rlnorm(n(), meanlog = log_mean_lime, sdlog = log_sd_lime)-1)))))
   
 
-# post vizualization: 
+# post visualization: 
 
 df_soil_selected_pH_conv|>
   ggplot(aes(x = pH_CaCl2_imputed, y = lime))+
   geom_point(alpha = 0.5)
 
 df_soil_selected_pH_conv|>
-  ggplot(aes(x = lime))+
+  ggplot(aes(x = lime, fill = lime_imputed))+
   geom_histogram()
 
 df_soil_selected_pH_conv|>
@@ -362,6 +508,9 @@ So, U only does site pH, while P H20 and site.
 
 ggplot(missing_ph_df, aes(x = recording_year, y = pH_CaCl2_imputed))+ 
   geom_point()
+
+ggplot(missing_ph_df, aes(x = pH_CaCl2_imputed))+ 
+  geom_histogram()
 ```
 
 # spatial distribution of pH and pH missingness

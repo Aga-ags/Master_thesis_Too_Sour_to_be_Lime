@@ -20,6 +20,14 @@ set.seed(144)
 df <- readRDS(file="../data/processed_data.Rda")
 df
 ```
+## Make sample weights
+```{r}
+df <- df |>
+  mutate(sample_weight = ifelse(pH_origin == "site", 0.7, ifelse(pH_origin == "CaCl2", 1, 0.9)),
+          sample_weight = ifelse(lime_imputed == TRUE, sample_weight-0.1, sample_weight))
+```
+
+
 ## One code encoding for categorical 
 ```{r}
 recipe_obj <- recipe(~ ., data = df) %>%
@@ -86,17 +94,17 @@ CreateTableOne(vars =columns, strata = "split", data = df)
 
 
 
-# Feed forward neural network trianing
+# Save prepared data
 
 
 ```{r}
 x_train <- train|>
-  select(!c("pH", "pH_origin", "x", "y", "id_row"))|>
+  select(!c("pH", "pH_origin", "x", "y", "id_row", "sample_weight", "lime", "lime_imputed"))|>
   as.matrix()
 y_train <- train$pH
 
 x_valid <- validation|>
-  select(!c("pH", "pH_origin", "x", "y", "id_row"))|>
+  select(!c("pH", "pH_origin", "x", "y", "id_row", "sample_weight", "lime", "lime_imputed"))|>
   as.matrix()
 y_valid  <- validation$pH
 ```
@@ -108,5 +116,12 @@ write.csv(x_valid,file='../data/x_valid.csv', row.names=FALSE)
 write.csv(y_valid,file='../data/y_valid.csv', row.names=FALSE)
 ```
 
+## Save training weights
+```{r}
+sample_wight_df <- train|>
+  select("sample_weight")
+
+write.csv(sample_wight_df,file='../data/sample_weights.csv', row.names=FALSE)
+```
 
 

@@ -4,3 +4,6 @@
 .Ruserdata
 .csv
 .tif
+
+keras_tuner_logs/
+tuning_results/
