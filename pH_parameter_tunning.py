@@ -62,7 +62,7 @@ def perform_moodel_training_with_tuning(training_x, entire_tranining_y, model_na
 
     # Initialize the tuner
     tuner = kt.RandomSearch(
-        build_model (number_outputs = len(list_of_dependent_var)),
+        lambda hp: build_model(hp,  number_outputs = len(list_of_dependent_var)),
         objective="val_mae", # best model is selected based on lowest MAE in the validation data
         max_trials=10,
         executions_per_trial=1,
@@ -72,7 +72,7 @@ def perform_moodel_training_with_tuning(training_x, entire_tranining_y, model_na
 
     # Search for best hyperparameters
     tuner.search(
-        training_x, training_y[],
+        training_x, training_y,
         validation_data=(x_val, validation_y),
         sample_weight=weigths,
         epochs=50,
@@ -96,23 +96,39 @@ def perform_moodel_training_with_tuning(training_x, entire_tranining_y, model_na
     best_model.save("./tuning_results/"+ model_name + ".h5")
 
     # Evaluate best model on validation data
-    loss, mae, mse = best_model.evaluate(validation_x, validation_y)
+    loss, mae, mse = best_model.evaluate(x_val, validation_y)
     rmse = np.sqrt(mse)
-    y_pred_val = best_model.predict(validation_x).flatten()
-    r2 = r2_score(validation_y, y_pred_val)
-
+    
     print(f"Metrics of best model on validation set")
     print(f"MAE:  {mae:.4f}")
     print(f"MSE:  {mse:.4f}")
     print(f"RMSE: {rmse:.4f}")
-    print(f"R²:   {r2:.4f}")
 
     # save the predicted values for vizualization
-    results_validation[model_name] = y_pred_val
+    y_pred_val = best_model.predict(x_val)
+    y_pred_test = best_model.predict(x_test)
 
-    y_pred_test = best_model.predict(x_test).flatten()
-    results_test[model_name] = y_pred_test
+    if len(list_of_dependent_var) == 1:
+        results_validation[model_name] = y_pred_val
+        results_test[model_name] = y_pred_test
+
+    elif len(list_of_dependent_var) == 2:
+        results_validation[model_name + "pH"] = y_pred_val[:, [0]]
+        results_validation[model_name + "lime"] = y_pred_val[:, [1]]
+        results_test[model_name + "pH"] = y_pred_test[:, [0]]
+        results_test[model_name + "lime"] = y_pred_test[:, [1]]
+
+    else:
+        print("The output was not saved due to unexpeced number of variables")
+
+
     
+perform_moodel_training_with_tuning(training_x = x_train, 
+                                    entire_tranining_y = y_train,
+                                    model_name = "pH_and_lime_try_run",
+                                    weigths = sample_weights,
+                                    list_of_dependent_var = ["pH", "lime"])
+
 perform_moodel_training_with_tuning(training_x = x_train, 
                                     entire_tranining_y = y_train,
                                     model_name = "pH_try_run",

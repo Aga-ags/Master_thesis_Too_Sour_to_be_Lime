@@ -5,3 +5,98 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
+```{r}
+library(tidyverse)
+```
+
+# Load data
+
+```{r load_data}
+df <- read.csv(file="./tuning_results/predictions_validation.csv")
+df
+```
+
+# Perform data evaluation 
+
+```{r observed_vs_predicted_plot}
+ggplot(df, aes(x = pH, y = pH_try_run))+
+  geom_point()+
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed")+
+  labs(title = "Relationship between observed and predicted pH values, single output NN", x = "Actual", y = "Predicted") +
+  theme_minimal()
+
+ggplot(df, aes(x = pH, y = pH_and_lime_try_runpH))+
+  geom_point()+
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed")+
+  labs(title = "Relationship between observed and predicted pH values, single output NN", x = "Actual", y = "Predicted") +
+  theme_minimal()
+
+ggplot(df, aes(x = lime, y = pH_and_lime_try_runlime))+
+  geom_point()+
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed")+
+  labs(title = "Relationship between observed and predicted pH values, single output NN", x = "Actual", y = "Predicted") +
+  theme_minimal()
+
+
+```
+
+```{r studying_residuals}
+df$residuals <- df$pH - df$pH_try_run
+
+ggplot(df, aes(x = pH_try_run, y = residuals)) +
+  geom_point(color = "darkorange2") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Residuals vs Fitted", x = "Predicted", y = "Residuals") +
+  theme_minimal()
+
+ggplot(df, aes(x = residuals)) +
+  geom_histogram(bins = 30, fill = "darkorange2",color = "black") +
+  labs(title = "Histogram of Residuals", x = "Residual", y = "Count") +
+  theme_minimal()
+
+df$residuals <- df$pH - df$pH_and_lime_try_runpH
+ggplot(df, aes(x = residuals)) +
+  geom_histogram(bins = 30, fill = "darkorange2",color = "black") +
+  labs(title = "Histogram of Residuals", x = "Residual", y = "Count") +
+  theme_minimal()
+```
+
+
+```{r comaprison_of_y_distribution}
+# Is the double peak pH structure preserved?
+
+ggplot(df, aes(x = pH))+
+  geom_histogram(bins = 20)
+
+
+ggplot(df, aes(x = pH_try_run))+
+  geom_histogram(bins = 20)
+
+ggplot(df, aes(x = pH_and_lime_try_runpH))+
+  geom_histogram(bins = 20)
+
+
+ggplot(df, aes(x = lime))+
+  geom_histogram(bins = 20)
+
+ggplot(df, aes(x = pH_and_lime_try_runlime))+
+  geom_histogram(bins = 20)
+
+```
+
+
+# Inference
+```{r predictor_importance}
+
+```
+
+```{r responce_plots}
+# responce curves, distribution of one against the other??
+
+```
+
+
+```{r rotated_axis_plot}
+
+```
+
