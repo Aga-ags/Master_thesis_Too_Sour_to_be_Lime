@@ -9,6 +9,7 @@ output: html_document
 # Libararies
 ```{r}
 library(mice)
+library(fitdistrplus) # fitting gamma distribution
 library(tidyverse)
 library(purrr)
 library(terra)
@@ -394,9 +395,12 @@ perform_normality_test(lime_class = 5, log_transform = TRUE)
 df_norm_estimate <- df_swiss|>
   filter(lime_site %in% c("3", "4", "5") & ! is.na(lime))|>
   group_by(lime_site)|>
-  summarise(log_mean_lime = mean(log(lime+ 0.01)), log_sd_lime = sd((log(lime+1))))
+  summarise(mean_lime = mean(lime), log_mean_lime = mean(log(lime+ 0.01)), var_lime = var(lime), log_sd_lime = sd((log(lime+1))))
 
 df_norm_estimate
+```
+```{r}
+
 ```
 
 
