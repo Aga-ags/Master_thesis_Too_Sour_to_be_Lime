@@ -6,9 +6,7 @@ from tensorflow.keras import layers
 import kerastuner as kt
 from sklearn.metrics import r2_score
 
-
 # load data
-
 # training and validation
 x_train = pd.read_csv("../data/x_train.csv").values
 y_train = pd.read_csv("../data/y_train.csv")
@@ -58,7 +56,10 @@ def build_model(hp, number_outputs):
     return model
 
 # define model training and parameter tuning function
-def perform_moodel_training_with_tuning(training_x, training_y, validation_x, validation_y, model_name, weigths, list_of_dependent_var):
+def perform_moodel_training_with_tuning(training_x, entire_tranining_y, model_name, weigths, list_of_dependent_var):
+    training_y = entire_tranining_y[list_of_dependent_var].values
+    validation_y = y_val[list_of_dependent_var].values
+
     # Initialize the tuner
     tuner = kt.RandomSearch(
         build_model (number_outputs = len(list_of_dependent_var)),
@@ -72,7 +73,7 @@ def perform_moodel_training_with_tuning(training_x, training_y, validation_x, va
     # Search for best hyperparameters
     tuner.search(
         training_x, training_y[],
-        validation_data=(validation_x, validation_y),
+        validation_data=(x_val, validation_y),
         sample_weight=weigths,
         epochs=50,
         batch_size=32,
@@ -113,10 +114,7 @@ def perform_moodel_training_with_tuning(training_x, training_y, validation_x, va
     results_test[model_name] = y_pred_test
     
 perform_moodel_training_with_tuning(training_x = x_train, 
-                                    training_y = y_train["pH"].values,
-                                    validation_x = x_val,
-                                    validation_y = y_val["pH"].values,
-                                    test_y = y_test["pH"].values,
+                                    entire_tranining_y = y_train,
                                     model_name = "pH_try_run",
                                     weigths = sample_weights,
                                     list_of_dependent_var = ["pH"])
