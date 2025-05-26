@@ -357,55 +357,30 @@ df_swiss|>
   geom_histogram()+
   facet_wrap(vars(lime_site))
 
-# distribution of log lime
-df_swiss|>
-  filter(lime_site %in% c("3", "4", "5"))|>
-  ggplot(aes(x = log(lime+1)))+
-  geom_histogram()+
-  facet_wrap(vars(lime_site))
-
-
-```
-```{r}
-# normality tests for default and log transformed lime:
-perform_normality_test <- function(lime_class, log_transform){
-  lime_values <- df_swiss |>
-    filter(lime_site == lime_class & !is.na(lime)) |>
-    mutate(lime = if (log_transform) log(lime + 1) else lime) |>
-    pull(lime)
-  shapiro.test(lime_values)
-  }
-
-# H0: data is normally distributed 
-
-perform_normality_test(lime_class = 3, log_transform = FALSE)
-perform_normality_test(lime_class = 4, log_transform = FALSE)
-perform_normality_test(lime_class = 5, log_transform = FALSE)
-
-perform_normality_test(lime_class = 3, log_transform = TRUE)
-perform_normality_test(lime_class = 4, log_transform = TRUE)
-perform_normality_test(lime_class = 5, log_transform = TRUE)
 ```
 
 
 
+```{r remove_outliers}
+# Remove outliers classes 3,4 and 5. 
 
-```{r estimate_normal_dist}
-# Normal distributions parameters of classes 3,4 and 5. 
-df_norm_estimate <- df_swiss|>
-  filter(lime_site %in% c("3", "4", "5") & ! is.na(lime))|>
-  group_by(lime_site)|>
-  summarise(mean_lime = mean(lime), log_mean_lime = mean(log(lime+ 0.01)), var_lime = var(lime), log_sd_lime = sd((log(lime+1))))
+remove_outliers_per_class <- function(class, lower_percentage, higher_percentage){
+df_selected_middle <- df_swiss|>
+  filter(lime_site == class & ! is.na(lime))|>
+  select(lime)|>
+  filter(lime > quantile(lime, lower_percentage) & lime < quantile(lime, higher_percentage))
 
-df_norm_estimate
-```
-```{r}
+return(df_selected_middle)
+}
 
+df_lime_3 <- remove_outliers_per_class(class = 3, lower_percentage = 0.1, higher_percentage = 0.9)
+df_lime_4 <- remove_outliers_per_class(class = 4, lower_percentage = 0.1, higher_percentage = 0.9)
+df_lime_5 <- remove_outliers_per_class(class = 5, lower_percentage = 0.1, higher_percentage = 0.9)
 ```
 
 
 # impute lime
-```{r}
+```{r impute_lime}
 # distribution of lime pre imputation
 df_soil_selected_pH_conv|>
   ggplot(aes(x = lime))+
@@ -413,22 +388,44 @@ df_soil_selected_pH_conv|>
 
 # impute lime
 df_soil_selected_pH_conv <- df_soil_selected_pH_conv|>
-  merge(y= df_norm_estimate, by="lime_site", all.x=TRUE)|>
   mutate(
     # this indication of whether lime is imputed is okey, because all values that will stay NA will be removed later on
     lime_imputed = is.na(lime),
-    lime = 
-           # is lime na: 
-           ifelse(!is.na(lime), lime,
-                  # is pH below 6.5:
-                  ifelse (pH_CaCl2_imputed < 6.5, 0, 
-                          # is lime_site observed
-                          ifelse(is.na(lime_site), lime, 
-                                       # is lime class less than 3
-                                       ifelse(lime_site < 3, 0,
-                                              # draw from random distribution of class 3:
-                                              rlnorm(n(), meanlog = log_mean_lime, sdlog = log_sd_lime)-1)))))
-  
+    # is pH below 6.5:
+    lime = ifelse (pH_CaCl2_imputed < 6.5 & is.na(lime), 0, lime),
+    # lime_site < 3
+    lime_imputed_0_2 = is.na(lime) & !is.na(lime_site) & lime_site < 3,
+    lime = ifelse(is.na(lime) & !is.na(lime_site) & lime_site < 3, 0, lime))
+
+# Imputation based on classes 3,4,5 
+
+# Size of sample that needs to be taken:
+length_impute_class_3 <- df_soil_selected_pH_conv|>
+  filter(is.na(lime) & lime_site == 3)|>
+  nrow()
+length_impute_class_4 <- df_soil_selected_pH_conv|>
+  filter(is.na(lime) & lime_site == 4)|>
+  nrow()
+length_impute_class_5 <- df_soil_selected_pH_conv|>
+  filter(is.na(lime) & lime_site == 5)|>
+  nrow()
+
+# Imputing the missing values:
+df_soil_selected_pH_conv <- df_soil_selected_pH_conv|>
+  # lime_site = 3
+  mutate(
+    lime_imputed_3_5 = is.na(lime), 
+    lime = ifelse(is.na(lime)& !is.na(lime_site) & lime_site == 3, 
+                       # randomly draw from oberved values in Switzerland (without outliers)
+                       sample(df_lime_3$lime, size = length_impute_class_3, replace = TRUE), 
+                       # lime_site = 4
+                       ifelse(is.na(lime)& !is.na(lime_site) & lime_site == 4, 
+                              sample(df_lime_4$lime, size = length_impute_class_4, replace = TRUE),
+                              # lime_site = 5
+                               ifelse(is.na(lime)& !is.na(lime_site) & lime_site == 5, 
+                                      sample(df_lime_5$lime, size = length_impute_class_5, replace = TRUE),
+                                      lime))))
+                                  
 
 # post visualization: 
 
@@ -441,18 +438,21 @@ df_soil_selected_pH_conv|>
   geom_histogram()
 
 df_soil_selected_pH_conv|>
-  dplyr::select(where(~ anyNA(.))) |>
-  dplyr::select("pH_CaCl2_imputed", "lime", "lime_site")|>
+  dplyr::select("pH_CaCl2_imputed", "lime", "lime_site", "lime_imputed")|>
   md.pattern(rotate.names = TRUE)
 
+```
 
+
+
+```{r}
 # remove rows with missing lime
 df_soil_selected_pH_conv <- df_soil_selected_pH_conv|>
   filter(!is.na(lime))|>
-  select(-"lime_site")
-
-
+  select(-lime_site)
+df_soil_selected_pH_conv
 ```
+
 
 
 ```{r}
@@ -544,7 +544,7 @@ df_soil_selected_pH_conv <- df_soil_selected_pH_conv%>%
 
 # removing still missing pH sites
 df_soil_selected_pH_conv <- df_soil_selected_pH_conv%>%
-  filter(is.na(pH_CaCl2_imputed) == FALSE)|>
+  filter(!is.na(pH_CaCl2_imputed))|>
   rename(pH = pH_CaCl2_imputed)
 
 df_soil_selected_pH_conv
@@ -609,7 +609,6 @@ df_soil_with_cov<- df_soil_with_cov|>
 ```{r}
 df_soil_with_cov
 ```
-
 
 # EDA 
 
@@ -873,10 +872,13 @@ data_with_OBCs
 
 ```
 
+
+
 ```{r}
 #add standard coordinates to make plotting easier
 processed_data <- cbind(data_with_OBCs_values, crds(data_with_OBCs, df=TRUE, list=FALSE))
 ```
+
 
 
 ## Point values at depths
@@ -890,7 +892,7 @@ processed_data <- processed_data |>
                values_to = "depth")|>
   select(-"type_depth", -"id")|>
   #change order of columns
-  select("pH", "pH_origin", "depth", "x", "y", "lime", "lime_imputed", "recording_year", everything())
+  select("pH", "pH_origin", "depth", "x", "y", "lime", "lime_imputed", "lime_imputed_3_5", "lime_imputed_0_2", "recording_year", everything())
 
 processed_data
 ```
@@ -940,6 +942,10 @@ write.csv(scaling_params, "scaling_parameters.csv", row.names = FALSE)
 
 ```
 
+```{r}
+processed_data|>
+  filter(pH_origin == "CaCl2" & lime_imputed == FALSE)
+```
 
 
 ## Save the data
@@ -947,6 +953,10 @@ write.csv(scaling_params, "scaling_parameters.csv", row.names = FALSE)
 complete_df <- processed_data[complete.cases(processed_data), ]
 colnames(complete_df)
 complete_df
+```
+```{r}
+complete_df|>
+  filter(pH_origin == "CaCl2" & lime_imputed == FALSE)
 ```
 
 ```{r}
