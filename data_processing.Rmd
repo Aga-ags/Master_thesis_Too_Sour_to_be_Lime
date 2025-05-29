@@ -123,6 +123,7 @@ areable_land_raster <- terra::rast("../data/zh_arable_land_s3.tif")
 crs(areable_land_raster)  <- "epsg:2056"
 ```
 
+
 ```{r}
 plot(areable_land_raster)
 ```
@@ -191,7 +192,7 @@ correlation_pH
 
 pred_Ca_check <- df_soil_org|>
   filter(!is.na(`pH-CaCl2`) & !is.na(pH_brightness))|>
-  select(`pH-CaCl2`, pH_brightness)
+  dplyr::select(`pH-CaCl2`, pH_brightness)
 
 rmse <- sqrt(mean((pred_Ca_check$`pH-CaCl2` - pred_Ca_check$pH_brightness)^2))
 rmse
@@ -367,7 +368,7 @@ df_swiss|>
 remove_outliers_per_class <- function(class, lower_percentage, higher_percentage){
 df_selected_middle <- df_swiss|>
   filter(lime_site == class & ! is.na(lime))|>
-  select(lime)|>
+  dplyr::select(lime)|>
   filter(lime > quantile(lime, lower_percentage) & lime < quantile(lime, higher_percentage))
 
 return(df_selected_middle)
@@ -449,7 +450,7 @@ df_soil_selected_pH_conv|>
 # remove rows with missing lime
 df_soil_selected_pH_conv <- df_soil_selected_pH_conv|>
   filter(!is.na(lime))|>
-  select(-lime_site)
+  dplyr::select(-lime_site)
 df_soil_selected_pH_conv
 ```
 
@@ -601,7 +602,7 @@ for (file in tif_files) {
 }
 
 df_soil_with_cov<- df_soil_with_cov|>
-  select(-ID_row)
+  dplyr::select(-ID_row)
 
 
 ```
@@ -753,7 +754,7 @@ points_sf$imputed_raster_value <- imputed_values
 # Add the imputed values to original column
 points_sf <- points_sf|>
   mutate(drainfor = ifelse(is.na(drainfor), imputed_raster_value, drainfor))|>
-  select(!c("imputed_raster_value"))
+  dplyr::select(!c("imputed_raster_value"))
 
 no_geometry <- points_sf %>%
   st_drop_geometry()
@@ -819,11 +820,11 @@ for (col in factor_cols) {
 target_var <- "pH"
 
 # Select numeric variables
-numeric_df <- df_soil_with_cov %>% select(where(is.numeric))
+numeric_df <- df_soil_with_cov %>% dplyr::select(where(is.numeric))
 
 # Compute correlations
 correlations <- numeric_df %>%
-  select(-all_of(target_var)) %>%
+  dplyr::select(-all_of(target_var)) %>%
   summarise(across(everything(), ~ cor(.x, numeric_df[[target_var]], use = "complete.obs"))) %>%
   pivot_longer(everything(), names_to = "variable", values_to = "correlation")
 
@@ -890,9 +891,9 @@ processed_data <- processed_data |>
   pivot_longer(cols = c("depth_avr", "depth_to_cm", "depth_from_cm"), 
                names_to = "type_depth", 
                values_to = "depth")|>
-  select(-"type_depth", -"id")|>
+  dplyr::select(-"type_depth", -"id")|>
   #change order of columns
-  select("pH", "pH_origin", "depth", "x", "y", "lime", "lime_imputed", "lime_imputed_3_5", "lime_imputed_0_2", "recording_year", everything())
+  dplyr::select("pH", "pH_origin", "depth", "x", "y", "lime", "lime_imputed", "lime_imputed_3_5", "lime_imputed_0_2", "recording_year", everything())
 
 processed_data
 ```
@@ -911,7 +912,7 @@ scaling_params <- data.frame(
 
 # Define the variables to scale
 vars_to_scale <- processed_data %>%
-  select(where(is.numeric), -any_of(c("x", "y", "pH", "id"))) %>%
+  dplyr::select(where(is.numeric), -any_of(c("x", "y", "pH", "id"))) %>%
   names()
 
 # Scale variables and store mean/sd
@@ -962,6 +963,7 @@ complete_df|>
 ```{r}
 write.csv(complete_df,file='../data/processed_data.csv', row.names=FALSE)
 saveRDS(complete_df, file="../data/processed_data.Rda")
+saveRDS(df_soil_arable, file="../data/arable_samples_all.Rda")
 ```
 
 

@@ -8,11 +8,12 @@ output: html_document
 
 
 ```{r libraries}
+library(terra)
 library(dplyr)
 library(sf)
 library(tableone)
 library(recipes)
-set.seed(87)
+set.seed(114)
 ```
 
 # Load data 
@@ -42,54 +43,131 @@ one_hot_df
 
 ## Split data
 ```{r}
-df <- one_hot_df
+# extract sites:
+df_sites <- one_hot_df|>
+  dplyr::select("x", "y")|>
+  unique()
+print("Number of sites")
+nrow(df_sites)
 
-#create ID column
-df$id_row <- 1:nrow(df)
+# find which sites contain 
+imputed_sites <- one_hot_df |>
+  dplyr::select("x", "y", "pH_origin", "lime_imputed")|>
+  filter(pH_origin %in% c("site", "H2O") | lime_imputed == TRUE)|>
+  dplyr::select("x", "y")|>
+  unique()
+imputed_sites
 
-# subset non imputed data to create the test and validation sample from (around 3000 observations less from 14.000)
-df_not_imputed <- df|>
-  filter(pH_origin == "CaCl2" & lime_imputed == FALSE)
+# find which sites are fully observed from certain data
+observed_sites <- dplyr::anti_join(df_sites, imputed_sites, by = c("x", "y"))
+observed_sites
 
-# find percentage to sample the imputed data to equal to 20 perc of entire sample
-sample_20 <- 0.2 * nrow(df)
-amount_of_non_imputed_equal_to_20_perc <- sample_20/ nrow(df_not_imputed)
-amount_of_non_imputed_equal_to_20_perc
+
+# find percentage to sample the not imputed data to equal to 20 perc of entire site sample
+sample_10 <- 0.1 * nrow(df_sites)
+amount_of_non_imputed_equal_to_10_perc <- sample_10/ nrow(observed_sites)
+amount_of_non_imputed_equal_to_10_perc
+
 
 # testing and validation datasets 
-test_and_validation_df <-  df_not_imputed %>% dplyr::sample_frac(amount_of_non_imputed_equal_to_20_perc)
+# extract sites:
+test_and_validation_sites <- observed_sites %>%   
+  dplyr::sample_frac(amount_of_non_imputed_equal_to_10_perc)
+print("Numer of validation and test sites:")
+nrow(test_and_validation_sites)
 
-validation <- test_and_validation_df %>% dplyr::sample_frac(0.50)
+validation_sites <- test_and_validation_sites %>% dplyr::sample_frac(0.50)
+print("Numer of validation sites:")
+nrow(validation_sites)
+
+test_sites <- dplyr::anti_join(test_and_validation_sites, validation_sites, by = c("x", "y"))
+print("Numer of test sites:")
+nrow(test_sites)
+
+
+#subset dataframe
+validation <- dplyr::inner_join(one_hot_df, validation_sites, by = c("x", "y"))
+print("Numer of validation horizons:")
 nrow(validation)
-test <- dplyr::anti_join(test_and_validation_df, validation, by = 'id_row')
+
+test <- dplyr::inner_join(one_hot_df, test_sites, by = c("x", "y"))
+print("Numer of test horizons:")
 nrow(test)
 
 # remaining df creates the train df: 
-train  <- dplyr::anti_join(df, test_and_validation_df, by = 'id_row')
+train  <- dplyr::anti_join(one_hot_df, test_and_validation_sites, by = c("x", "y"))
+print("Numer of train horizons:")
 nrow(train)
 
-# adjument the original df with which row belongs to which split:
-df$split <- ifelse(df$id_row %in% train$id_row, "Train",
-                   ifelse(df$id_row %in% test$id_row, "Test", "Validation"))
-```
+# rejoin the data into a single dataframe with indication of split:
+df_1 <- train |>
+  mutate(split = "Train")
+df_2 <- validation |>
+  mutate(split = "Validation")
+df_3 <- test |>
+  mutate(split = "Test")
 
+df <- rbind(df_1, df_2, df_3)
+```
 
 
 ## Investigate the representatives of test sample:
 ```{r}
+df_all_samples_arable <- readRDS(file="../data/arable_samples_all.Rda")|>
+  st_as_sf(coords = c("x", "y"), crs = 2056)
+
 test_sf <- st_as_sf(test, coords = c("x", "y"), crs = 2056)  
 train_sf <- st_as_sf(train, coords = c("x", "y"), crs = 2056)
+validation_sf <- st_as_sf(validation, coords = c("x", "y"), crs = 2056)
 df_sf <- st_as_sf(df, coords = c("x", "y"), crs = 2056)
 
-plot(st_geometry(df_sf), col = 'grey', main = "Train vs Test spatial distribution")
+plot(st_geometry(df_all_samples_arable), col = 'grey', main = "Data splits spatial distribution")
 plot(st_geometry(train_sf), col = 'blue', add = TRUE)
 plot(st_geometry(test_sf), col = 'red', add = TRUE)
-legend("bottomright", legend = c("All", "Train", "Test"), col = c("grey", "blue", "red"), pch = 1)
+plot(st_geometry(validation_sf), col = 'yellow', add = TRUE)
+legend("bottomright", legend = c("All", "Train", "Test", "Validation"), col = c("grey", "blue", "red", "yellow"), pch = 1)
+
+```
+
+```{r}
+areable_land_raster <- terra::rast("../data/zh_arable_land_s3.tif")
+crs(areable_land_raster)  <- "epsg:2056"
+```
+
+```{r}
+plot(areable_land_raster,      
+     breaks = c(-0.5,0.5,1.5), 
+     col = c("white", "black"))
+plot(st_geometry(test_sf), col = 'red',  pch = 16, add = TRUE)
+
+plot(areable_land_raster,      
+     breaks = c(-0.5,0.5,1.5), 
+     col = c("white", "black"))
+plot(st_geometry(train_sf), col = 'red',  pch = 16, add = TRUE)
+
+plot(areable_land_raster,      
+     breaks = c(-0.5,0.5,1.5), 
+     col = c("white", "black"))
+plot(st_geometry(validation_sf), col = 'red',  pch = 16, add = TRUE)
+
+plot(areable_land_raster,      
+     breaks = c(-0.5,0.5,1.5), 
+     col = c("white", "black"))
+plot(st_geometry(test_sf), col = 'red',  pch = 16, add = TRUE)
+plot(st_geometry(validation_sf), col = 'green',  pch = 16, add = TRUE)
+
+plot(areable_land_raster,      
+     breaks = c(-0.5,0.5,1.5), 
+     col = c("white", "black"))
+observed_sites|>
+  st_as_sf(coords = c("x", "y"), crs = 2056) |>
+    plot(col = 'red',  pch = 16, add = TRUE)
+  
 ```
 
 ```{r}
 columns <- df|>
-  dplyr::select(-"x", -"y", - "split", -"id_row")|>
+  dplyr::select(-"x", -"y", - "split")|>
   colnames()
 CreateTableOne(vars =columns, strata = "split", data = df)
 ```
@@ -98,30 +176,39 @@ CreateTableOne(vars =columns, strata = "split", data = df)
 # Save prepared data
 ```{r}
 x_train <- train|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y", "id_row", "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
+  dplyr::select(!c("pH", "pH_origin", "x", "y", "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
   as.matrix()
 y_train <- train|>
   dplyr::select("pH", "lime")
 
 x_valid <- validation|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y", "id_row", "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
+  dplyr::select(!c("pH", "pH_origin", "x", "y", "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
   as.matrix()
 y_valid  <- validation|>
   dplyr::select("pH", "lime")
 
 x_test <- test|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y", "id_row", "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
+  dplyr::select(!c("pH", "pH_origin", "x", "y", "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
   as.matrix()
 y_test  <- test |>
   dplyr::select("pH", "lime")
 
 ```
 
+
+```{r}
+train |> count(pH_origin, lime_imputed, sort = TRUE)
+```
+
+
+
+
+
 ```{r}
 # Select training data based on imputation conditions
 x_tain_only_H20 <- train|>
   filter(lime_imputed == FALSE & pH_origin != "site")|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y", "id_row", "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
+  dplyr::select(!c("pH", "pH_origin", "x", "y",   "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
   as.matrix()
 y_tain_only_H20 <- train|>
   filter(lime_imputed == FALSE & pH_origin != "site")|>
@@ -129,7 +216,7 @@ y_tain_only_H20 <- train|>
 
 x_tain_pH_imp <- train|>
   filter(lime_imputed == FALSE)|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y", "id_row", "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
+  dplyr::select(!c("pH", "pH_origin", "x", "y",   "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
   as.matrix()
 y_tain_pH_imp<- train|>
    filter(lime_imputed == FALSE)|>
@@ -137,7 +224,7 @@ y_tain_pH_imp<- train|>
 
 x_tain_H20_and_lime_65<- train|>
   filter(lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site")|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y", "id_row", "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
+  dplyr::select(!c("pH", "pH_origin", "x", "y",   "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
   as.matrix()
 y_tain_H20_and_lime_65<- train|>
   filter(lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site")|>
@@ -145,7 +232,7 @@ y_tain_H20_and_lime_65<- train|>
 
 x_tain_pH_imp_and_lime_65<- train|>
   filter(lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE)|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y", "id_row", "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
+  dplyr::select(!c("pH", "pH_origin", "x", "y",   "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
   as.matrix()
 y_tain_pH_imp_and_lime_65<- train|>
   filter(lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE)|>
@@ -153,11 +240,20 @@ y_tain_pH_imp_and_lime_65<- train|>
 
 x_tain_pH_imp_and_lime_65_0_2<- train|>
   filter(lime_imputed_3_5 == FALSE)|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y", "id_row", "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
+  dplyr::select(!c("pH", "pH_origin", "x", "y",   "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
   as.matrix()
 y_tain_pH_imp_and_lime_65_0_2<- train|>
   filter(lime_imputed_3_5 == FALSE)|>
   dplyr::select("pH", "lime")
+```
+
+```{r}
+nrow(x_train)
+nrow(x_tain_only_H20)
+nrow(x_tain_pH_imp)
+nrow(x_tain_H20_and_lime_65)
+nrow(x_tain_pH_imp_and_lime_65)
+nrow(x_tain_pH_imp_and_lime_65_0_2)
 ```
 
 
@@ -165,24 +261,24 @@ y_tain_pH_imp_and_lime_65_0_2<- train|>
 write.csv(x_train,file='../data/x_train_full_imp.csv', row.names=FALSE)
 write.csv(y_train,file='../data/y_train_full_imp.csv', row.names=FALSE)
 
-write.csv(x_tain_only_H20,file='../data/x_tain_only_H20.csv', row.names=FALSE)
-write.csv(y_tain_only_H20,file='../data/y_tain_only_H20.csv', row.names=FALSE)
+write.csv(x_tain_only_H20,file='../data/x_train_only_H20.csv', row.names=FALSE)
+write.csv(y_tain_only_H20,file='../data/y_train_only_H20.csv', row.names=FALSE)
 
 
-write.csv(x_tain_pH_imp,file='../data/x_tain_pH_imp.csv', row.names=FALSE)
-write.csv(y_tain_pH_imp,file='../data/y_tain_pH_imp.csv', row.names=FALSE)
+write.csv(x_tain_pH_imp,file='../data/x_train_pH_imp.csv', row.names=FALSE)
+write.csv(y_tain_pH_imp,file='../data/y_train_pH_imp.csv', row.names=FALSE)
 
 
-write.csv(x_tain_H20_and_lime_65,file='../data/x_tain_H20_and_lime_65.csv', row.names=FALSE)
-write.csv(y_tain_H20_and_lime_65,file='../data/y_tain_H20_and_lime_65.csv', row.names=FALSE)
+write.csv(x_tain_H20_and_lime_65,file='../data/x_train_H20_and_lime_65.csv', row.names=FALSE)
+write.csv(y_tain_H20_and_lime_65,file='../data/y_train_H20_and_lime_65.csv', row.names=FALSE)
 
 
-write.csv(x_tain_pH_imp_and_lime_65,file='../data/x_tain_pH_imp_and_lime_65.csv', row.names=FALSE)
-write.csv(y_tain_pH_imp_and_lime_65,file='../data/y_tain_pH_imp_and_lime_65.csv', row.names=FALSE)
+write.csv(x_tain_pH_imp_and_lime_65,file='../data/x_train_pH_imp_and_lime_65.csv', row.names=FALSE)
+write.csv(y_tain_pH_imp_and_lime_65,file='../data/y_train_pH_imp_and_lime_65.csv', row.names=FALSE)
 
 
-write.csv(x_tain_pH_imp_and_lime_65_0_2,file='../data/x_tain_pH_imp_and_lime_65_0_2.csv', row.names=FALSE)
-write.csv(y_tain_pH_imp_and_lime_65_0_2,file='../data/y_tain_pH_imp_and_lime_65_0_2.csv', row.names=FALSE)
+write.csv(x_tain_pH_imp_and_lime_65_0_2,file='../data/x_train_pH_imp_and_lime_65_0_2.csv', row.names=FALSE)
+write.csv(y_tain_pH_imp_and_lime_65_0_2,file='../data/y_train_pH_imp_and_lime_65_0_2.csv', row.names=FALSE)
 
 
 write.csv(x_valid,file='../data/x_valid.csv', row.names=FALSE)
@@ -194,10 +290,41 @@ write.csv(y_test,file='../data/y_test.csv', row.names=FALSE)
 
 ## Save training weights
 ```{r}
-sample_wight_df <- train|>
+sample_wight_full_imp <- train|>
   dplyr::select("sample_weight")
 
-write.csv(sample_wight_df,file='../data/sample_weights.csv', row.names=FALSE)
+write.csv(sample_wight_full_imp,file='../data/sample_weights_full_imp.csv', row.names=FALSE)
+
+
+sample_wight_only_H20 <- train|>
+  filter(lime_imputed == FALSE & pH_origin != "site")|>
+  dplyr::select("sample_weight")
+
+write.csv(sample_wight_only_H20,file='../data/sample_weights_only_H20.csv', row.names=FALSE)
+
+sample_wight_pH_imp <- train|>
+  filter(lime_imputed == FALSE)|>
+  dplyr::select("sample_weight")
+write.csv(sample_wight_pH_imp,file='../data/sample_weights_pH_imp.csv', row.names=FALSE)
+
+
+sample_wight_H20_and_lime_65<- train|>
+  filter(lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site")|>
+  dplyr::select("sample_weight")
+
+write.csv(sample_wight_H20_and_lime_65,file='../data/sample_weights_H20_and_lime_65.csv', row.names=FALSE)
+
+sample_wight_pH_imp_and_lime_65<- train|>
+  filter(lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE)|>
+  dplyr::select("sample_weight")
+
+write.csv(sample_wight_pH_imp_and_lime_65,file='../data/sample_weights_pH_imp_and_lime_65.csv', row.names=FALSE)
+
+sample_wight_pH_imp_and_lime_65_0_2<- train|>
+  filter(lime_imputed_3_5 == FALSE)|>
+  dplyr::select("sample_weight")
+
+write.csv(sample_wight_pH_imp_and_lime_65_0_2,file='../data/sample_weights_pH_imp_and_lime_65_0_2.csv', row.names=FALSE)
 ```
 
 

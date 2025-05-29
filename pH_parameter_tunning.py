@@ -7,12 +7,9 @@ import kerastuner as kt
 from sklearn.metrics import r2_score
 
 # load data
-# training and validation
-x_train = pd.read_csv("../data/x_train.csv").values
-y_train = pd.read_csv("../data/y_train.csv")
+# validation
 x_val = pd.read_csv("../data/x_valid.csv").values
 y_val = pd.read_csv("../data/y_valid.csv")
-sample_weights = pd.read_csv("../data/sample_weights.csv").values.flatten()
 
 # test data
 x_test = pd.read_csv("../data/x_test.csv").values
@@ -24,9 +21,8 @@ results_validation = y_val
 results_test = y_test
 
 
-
 # Define the model building function
-def build_model(hp, number_outputs):
+def build_model(hp, number_outputs, x_train):
     model = keras.Sequential()
     
     # Input layer
@@ -56,29 +52,43 @@ def build_model(hp, number_outputs):
     return model
 
 # define model training and parameter tuning function
-def perform_moodel_training_with_tuning(training_x, entire_tranining_y, model_name, weigths, list_of_dependent_var):
-    training_y = entire_tranining_y[list_of_dependent_var].values
+def perform_moodel_training_with_tuning(imputation_scenario, model_name, include_weigths, list_of_dependent_var):
+    x_train = pd.read_csv("../data/x_train_" + imputation_scenario + ".csv").values
+    y_train = pd.read_csv("../data/y_train_" + imputation_scenario + ".csv")
+
+    # sample wrights
+    sample_weights = pd.read_csv("../data/sample_weights_" + imputation_scenario + ".csv").values.flatten()
+
+    
+    training_y = y_train[list_of_dependent_var].values
     validation_y = y_val[list_of_dependent_var].values
 
     # Initialize the tuner
     tuner = kt.RandomSearch(
-        lambda hp: build_model(hp,  number_outputs = len(list_of_dependent_var)),
-        objective="val_mae", # best model is selected based on lowest MAE in the validation data
+        lambda hp: build_model(hp,  number_outputs = len(list_of_dependent_var), x_train = x_train),
+        objective="val_mse", # best model is selected based on lowest MAE in the validation data
         max_trials=10,
         executions_per_trial=1,
         directory="keras_tuner_logs",
         project_name = model_name 
     )
 
-    # Search for best hyperparameters
-    tuner.search(
-        training_x, training_y,
-        validation_data=(x_val, validation_y),
-        sample_weight=weigths,
-        epochs=50,
-        batch_size=32,
-        callbacks=[keras.callbacks.EarlyStopping(patience=5)]
-    )
+    # Define training arguments
+    search_args = {
+        "x": x_train,
+        "y": training_y,
+        "validation_data": (x_val, validation_y),
+        "epochs": 50,
+        "batch_size": 32,
+        "callbacks": [keras.callbacks.EarlyStopping(patience=5)]
+    }
+
+    # Add sample_weight only if include_weights is True
+    if include_weigths:
+        search_args["sample_weight"] = sample_weights
+
+    # Call tuner.search with unpacked arguments
+    tuner.search(**search_args)
 
     # print search summary
     tuner.search_space_summary()
@@ -122,22 +132,115 @@ def perform_moodel_training_with_tuning(training_x, entire_tranining_y, model_na
         print("The output was not saved due to unexpeced number of variables")
 
 
-    
-perform_moodel_training_with_tuning(training_x = x_train, 
-                                    entire_tranining_y = y_train,
-                                    model_name = "pH_and_lime_try_run",
-                                    weigths = sample_weights,
+# # single output pH: 
+# perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
+#                                     model_name = "pH_only_H2O",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"])
+
+# perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
+#                                     model_name = "pH_pH_imp",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"])
+
+# perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
+#                                     model_name = "pH_H20_and_lime_65",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"])
+
+
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
+#                                     model_name = "pH_imp_and_lime_65",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"])
+
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+#                                     model_name = "pH_imp_and_lime_65_0_2",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"])
+
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
+#                                     model_name = "pH_full_imp",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"])
+
+# # Export results to CSV
+# results_validation.to_csv('./tuning_results/predictions_validation_pH.csv', index=False)
+# results_test.to_csv('./tuning_results/predictions_test_pH.csv', index=False)
+
+
+# single output lime: 
+# perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
+#                                     model_name = "lime_only_H2O",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["lime"])
+
+# perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
+#                                     model_name = "lime_pH_imp",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["lime"])
+
+# perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
+#                                     model_name = "lime_H20_and_lime_65",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["lime"])
+
+
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
+#                                     model_name = "lime_imp_and_lime_65",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["lime"])
+
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+#                                     model_name = "lime_imp_and_lime_65_0_2",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["lime"])
+
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
+#                                     model_name = "lime_full_imp",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["lime"])
+
+
+# # Export results to CSV
+# results_validation.to_csv('./tuning_results/predictions_validation_lime.csv', index=False)
+# results_test.to_csv('./tuning_results/predictions_test_lime.csv', index=False)
+
+
+# two output: 
+perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
+                                    model_name = "both_only_H2O",
+                                    include_weigths = True,
                                     list_of_dependent_var = ["pH", "lime"])
 
-perform_moodel_training_with_tuning(training_x = x_train, 
-                                    entire_tranining_y = y_train,
-                                    model_name = "pH_try_run",
-                                    weigths = sample_weights,
-                                    list_of_dependent_var = ["pH"])
+perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
+                                    model_name = "both_pH_imp",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH","lime"])
+
+perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
+                                    model_name = "both_H20_and_lime_65",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH","lime"])
+
+
+perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
+                                    model_name = "both_imp_and_lime_65",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH","lime"])
+
+perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+                                    model_name = "both_imp_and_lime_65_0_2",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH","lime"])
+
+perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
+                                    model_name = "both_full_imp",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH","lime"])
 
 
 # Export results to CSV
-results_validation.to_csv('./tuning_results/predictions_validation.csv', index=False)
-results_test.to_csv('./tuning_results/predictions_test.csv', index=False)
-
+results_validation.to_csv('./tuning_results/predictions_validation_both.csv', index=False)
+results_test.to_csv('./tuning_results/predictions_test_both.csv', index=False)
 
