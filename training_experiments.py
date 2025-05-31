@@ -5,6 +5,7 @@ import os
 os.environ["KERAS_BACKEND"] = "tensorflow"
 
 np.random.seed(189)
+import tensorflow as tf
 import keras
 from keras import layers
 from keras import ops
@@ -40,30 +41,39 @@ class CustomMetric(keras.metrics.Metric):
         self.sum_gt_zero = self.add_weight(name="sum_gt_zero", initializer="zeros")
         self.count_gt_zero = self.add_weight(name="count_gt_zero", initializer="zeros")
 
-    def update_state(self, y_true, y_pred):
+    def update_state(self, y_true, y_pred, sample_weight = None):
         # Create masks
         mask_zero = ops.equal(y_true, 0)
         mask_gt_zero = ops.greater(y_true, 0)
 
         # MSE for zero values
-        y_true_zero = ops.boolean_mask(y_true, mask_zero)
-        y_pred_zero = ops.boolean_mask(y_pred, mask_zero)
+        y_true_zero = tf.boolean_mask(y_true, mask_zero)
+        y_pred_zero = tf.boolean_mask(y_pred, mask_zero)
         se_zero = ops.square(y_true_zero - y_pred_zero)
         self.sum_zero.assign_add(ops.sum(se_zero))
         self.count_zero.assign_add(ops.cast(ops.shape(se_zero)[0], "float32"))
 
         # MSE for values > 0
-        y_true_gt_zero = ops.boolean_mask(y_true, mask_gt_zero)
-        y_pred_gt_zero = ops.boolean_mask(y_pred, mask_gt_zero)
+        y_true_gt_zero = tf.boolean_mask(y_true, mask_gt_zero)
+        y_pred_gt_zero = tf.boolean_mask(y_pred, mask_gt_zero)
         se_gt_zero = ops.square(y_true_gt_zero - y_pred_gt_zero)
         self.sum_gt_zero.assign_add(ops.sum(se_gt_zero))
         self.count_gt_zero.assign_add(ops.cast(ops.shape(se_gt_zero)[0], "float32"))
 
 
     def result(self):
-        # Avoid division by zero
-        mse_zero = ops.switch(self.count_zero > 0, self.sum_zero / self.count_zero, 0.0)
-        mse_gt_zero = ops.switch(self.count_gt_zero > 0, self.sum_gt_zero / self.count_gt_zero, 0.0)
+        mse_zero = tf.cond(
+            self.count_zero > 0,
+            lambda: self.sum_zero / self.count_zero,
+            lambda: tf.constant(0.0)
+        )
+
+        mse_gt_zero = tf.cond(
+            self.count_gt_zero > 0,
+            lambda: self.sum_gt_zero / self.count_gt_zero,
+            lambda: tf.constant(0.0)
+        )
+
         return (mse_zero + mse_gt_zero) / 2
 
     def reset_state(self):
@@ -74,7 +84,7 @@ class CustomMetric(keras.metrics.Metric):
 
 
 # Define the model building function
-def build_model(hp, number_outputs, x_train):
+def build_model(hp, number_outputs, x_train, loss_function):
     model = keras.Sequential()
     
     # Input layer
@@ -97,14 +107,14 @@ def build_model(hp, number_outputs, x_train):
         optimizer=keras.optimizers.Adam(
             hp.Choice("learning_rate", [1e-2, 1e-3, 1e-4])
         ),
-        loss="mse",
-        metrics=["mae", "mse"]
+        loss=loss_function,
+        metrics=["mae", "mse", CustomMetric()]
     )
     
     return model
 
 # define model training and parameter tuning function
-def perform_moodel_training_with_tuning(imputation_scenario, model_name, include_weigths, list_of_dependent_var, objective):
+def perform_moodel_training_with_tuning(imputation_scenario, model_name, include_weigths, list_of_dependent_var, objective, loss_function):
     x_train = pd.read_csv("../data/x_train_" + imputation_scenario + ".csv").values
     y_train = pd.read_csv("../data/y_train_" + imputation_scenario + ".csv")
 
@@ -117,7 +127,7 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
 
     # Initialize the tuner
     tuner = kt.RandomSearch(
-        lambda hp: build_model(hp,  number_outputs = len(list_of_dependent_var), x_train = x_train),
+        lambda hp: build_model(hp,  number_outputs = len(list_of_dependent_var), x_train = x_train, loss_function = loss_function),
         objective = objective, # org val_mae
         max_trials=10,
         executions_per_trial=1,
@@ -158,7 +168,7 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
     best_model.save("./tuning_results/"+ model_name + ".h5")
 
     # Evaluate best model on validation data
-    loss, mae, mse = best_model.evaluate(x_val, validation_y)
+    loss, mae, mse, zero_infalted_mse = best_model.evaluate(x_val, validation_y)
     rmse = np.sqrt(mse)
     
     print(f"Metrics of best model on validation set")
@@ -190,31 +200,36 @@ perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
                                     model_name = "pH_mse",
                                     include_weigths = True,
                                     list_of_dependent_var = ["pH"], 
-                                    objective= "val_mse")
+                                    objective= "val_mse", 
+                                    loss_function = "mse")
 
 perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
                                     model_name = "pH_mae",
                                     include_weigths = True,
                                     list_of_dependent_var = ["pH"], 
-                                    objective= "val_mae")
+                                    objective= "val_mae",
+                                    loss_function = "mse")
 
 perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
                                     model_name = "lime_mse",
                                     include_weigths = True,
                                     list_of_dependent_var = ["lime"], 
-                                    objective= "val_mse")
+                                    objective= "val_mse",
+                                    loss_function = "mse")
 
 perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
                                     model_name = "lime_mae",
                                     include_weigths = True,
                                     list_of_dependent_var = ["lime"], 
-                                    objective= "val_mae")
+                                    objective= "val_mae",
+                                    loss_function = "mse")
 
 perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
                                     model_name = "lime_zero_inflated_mse",
                                     include_weigths = True,
                                     list_of_dependent_var = ["lime"], 
-                                    objective= kt.Objective("val_zero_inflated_mse", direction="min")
+                                    objective= kt.Objective("val_zero_inflated_mse", direction="min"),
+                                    loss_function = "mse"
     )
 
 

@@ -507,6 +507,15 @@ missing_ph_df|>
 ```
 So, U only does site pH, while P H20 and site. 
 
+# Ploting lime
+```{r}
+
+ggplot(missing_ph_df, aes(x = recording_year, y = lime))+ 
+  geom_point()
+
+ggplot(missing_ph_df, aes(x = lime))+ 
+  geom_histogram()
+```
 
 # Ploting pH 
 ```{r}

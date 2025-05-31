@@ -1,8 +1,15 @@
 import pandas as pd
 import numpy as np
+
+import os
+os.environ["KERAS_BACKEND"] = "tensorflow"
+
 np.random.seed(189)
-from tensorflow import keras
-from tensorflow.keras import layers
+import tensorflow as tf
+import keras
+from keras import layers
+from keras import ops
+from keras.layers import Dropout
 import kerastuner as kt
 from sklearn.metrics import r2_score
 
@@ -20,39 +27,100 @@ y_test = pd.read_csv("../data/y_test.csv")
 results_validation = y_val
 results_test = y_test
 
+# custom objective for zero - inflation
+
+class CustomMetric(keras.metrics.Metric):
+    def __init__(self, **kwargs):
+        # Specify the name of the metric as "custom_metric".
+        super().__init__(name="zero_inflated_mse", **kwargs)
+
+        # stores cumulative sum of squares of true zero samples
+        self.sum_zero = self.add_weight(name="sum_zero", initializer="zeros")
+        # stores the number of zero samples
+        self.count_zero = self.add_weight(name="count_zero", initializer="zeros")
+        # stores cumulative sum of squares of samples greater than zero 
+        self.sum_gt_zero = self.add_weight(name="sum_gt_zero", initializer="zeros")
+        self.count_gt_zero = self.add_weight(name="count_gt_zero", initializer="zeros")
+
+    def update_state(self, y_true, y_pred, sample_weight = None):
+        # Create masks
+        mask_zero = ops.equal(y_true, 0)
+        mask_gt_zero = ops.greater(y_true, 0)
+
+        # MSE for zero values
+        y_true_zero = tf.boolean_mask(y_true, mask_zero)
+        y_pred_zero = tf.boolean_mask(y_pred, mask_zero)
+        se_zero = ops.square(y_true_zero - y_pred_zero)
+        self.sum_zero.assign_add(ops.sum(se_zero))
+        self.count_zero.assign_add(ops.cast(ops.shape(se_zero)[0], "float32"))
+
+        # MSE for values > 0
+        y_true_gt_zero = tf.boolean_mask(y_true, mask_gt_zero)
+        y_pred_gt_zero = tf.boolean_mask(y_pred, mask_gt_zero)
+        se_gt_zero = ops.square(y_true_gt_zero - y_pred_gt_zero)
+        self.sum_gt_zero.assign_add(ops.sum(se_gt_zero))
+        self.count_gt_zero.assign_add(ops.cast(ops.shape(se_gt_zero)[0], "float32"))
+
+
+    def result(self):
+        mse_zero = tf.cond(
+            self.count_zero > 0,
+            lambda: self.sum_zero / self.count_zero,
+            lambda: tf.constant(0.0)
+        )
+
+        mse_gt_zero = tf.cond(
+            self.count_gt_zero > 0,
+            lambda: self.sum_gt_zero / self.count_gt_zero,
+            lambda: tf.constant(0.0)
+        )
+
+        return (mse_zero + mse_gt_zero) / 2
+
+    def reset_state(self):
+        self.sum_zero.assign(0.0)
+        self.count_zero.assign(0.0)
+        self.sum_gt_zero.assign(0.0)
+        self.count_gt_zero.assign(0.0)
+
 
 # Define the model building function
-def build_model(hp, number_outputs, x_train):
+def build_model(hp, number_outputs, x_train, loss_function, include_dropout):
     model = keras.Sequential()
     
     # Input layer
     model.add(layers.Input(shape=(x_train.shape[1],)))
+    if include_dropout:
+        model.add(Dropout(0.2))
 
     # Tune the number of hidden layers: 1 to 3
     for i in range(hp.Int("num_layers", 1, 3)):
         model.add(
             layers.Dense(
-                units=hp.Choice(f"units_{i}", values=[16, 32, 64, 128]),
-                activation=hp.Choice("activation", values=["relu", "tanh"])
-            )
-        )
+                units=hp.Choice(f"units_{i}", values=[2, 16, 32, 64, 128]),
+                activation=hp.Choice("activation", values=["relu", "tanh", "elu", "silu"])
+            ))
+        if include_dropout:
+            model.add(Dropout(0.2))
+        
     
     # Output layer for regression
-    model.add(layers.Dense(number_outputs))
+    model.add(layers.Dense(number_outputs,
+              activation=hp.Choice("activation", values=["relu", "linear"])))
     
     # Compile the model
     model.compile(
         optimizer=keras.optimizers.Adam(
             hp.Choice("learning_rate", [1e-2, 1e-3, 1e-4])
         ),
-        loss="mse",
-        metrics=["mae", "mse"]
+        loss=loss_function,
+        metrics=["mae", "mse", CustomMetric()]
     )
     
     return model
 
 # define model training and parameter tuning function
-def perform_moodel_training_with_tuning(imputation_scenario, model_name, include_weigths, list_of_dependent_var):
+def perform_moodel_training_with_tuning(imputation_scenario, model_name, include_weigths, include_dropout, list_of_dependent_var, objective, loss_function):
     x_train = pd.read_csv("../data/x_train_" + imputation_scenario + ".csv").values
     y_train = pd.read_csv("../data/y_train_" + imputation_scenario + ".csv")
 
@@ -65,9 +133,9 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
 
     # Initialize the tuner
     tuner = kt.RandomSearch(
-        lambda hp: build_model(hp,  number_outputs = len(list_of_dependent_var), x_train = x_train),
-        objective="val_mse", # best model is selected based on lowest MAE in the validation data
-        max_trials=10,
+        lambda hp: build_model(hp,  number_outputs = len(list_of_dependent_var), x_train = x_train, loss_function = loss_function, include_dropout = include_dropout),
+        objective = objective, # org val_mae
+        max_trials=100,
         executions_per_trial=1,
         directory="keras_tuner_logs",
         project_name = model_name 
@@ -80,7 +148,7 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
         "validation_data": (x_val, validation_y),
         "epochs": 50,
         "batch_size": 32,
-        "callbacks": [keras.callbacks.EarlyStopping(patience=5)]
+        "callbacks":[keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)]
     }
 
     # Add sample_weight only if include_weights is True
@@ -106,13 +174,13 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
     best_model.save("./tuning_results/"+ model_name + ".h5")
 
     # Evaluate best model on validation data
-    loss, mae, mse = best_model.evaluate(x_val, validation_y)
+    loss, mae, mse, zero_infalted_mse = best_model.evaluate(x_val, validation_y)
     rmse = np.sqrt(mse)
     
     print(f"Metrics of best model on validation set")
     print(f"MAE:  {mae:.4f}")
     print(f"MSE:  {mse:.4f}")
-    print(f"RMSE: {rmse:.4f}")
+    print(f"Zero inflated MSE:  {zero_infalted_mse:.4f}")
 
     # save the predicted values for vizualization
     y_pred_val = best_model.predict(x_val)
@@ -132,41 +200,205 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
         print("The output was not saved due to unexpeced number of variables")
 
 
-# # single output pH: 
-# perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
-#                                     model_name = "pH_only_H2O",
-#                                     include_weigths = True,
-#                                     list_of_dependent_var = ["pH"])
+# single output pH: 
+# everything per imputation scenario
+perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
+                                    model_name = "pH_only_H2O",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
 
-# perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
-#                                     model_name = "pH_pH_imp",
-#                                     include_weigths = True,
-#                                     list_of_dependent_var = ["pH"])
+perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
+                                    model_name = "pH_pH_imp",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
 
-# perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
-#                                     model_name = "pH_H20_and_lime_65",
-#                                     include_weigths = True,
-#                                     list_of_dependent_var = ["pH"])
+perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
+                                    model_name = "pH_H20_and_lime_65",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
 
+perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
+                                    model_name = "pH_imp_and_lime_65",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
 
-# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
-#                                     model_name = "pH_imp_and_lime_65",
-#                                     include_weigths = True,
-#                                     list_of_dependent_var = ["pH"])
+perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+                                    model_name = "pH_imp_and_lime_65_0_2",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
 
-# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
-#                                     model_name = "pH_imp_and_lime_65_0_2",
-#                                     include_weigths = True,
-#                                     list_of_dependent_var = ["pH"])
+perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
+                                    model_name = "pH_full_imp",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
+# remove dropout
+perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
+                                    model_name = "pH_only_H2O_no_dropout",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = False)
 
-# perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
-#                                     model_name = "pH_full_imp",
-#                                     include_weigths = True,
-#                                     list_of_dependent_var = ["pH"])
+perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
+                                    model_name = "pH_pH_imp_no_dropout",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = False)
 
-# # Export results to CSV
-# results_validation.to_csv('./tuning_results/predictions_validation_pH.csv', index=False)
-# results_test.to_csv('./tuning_results/predictions_test_pH.csv', index=False)
+perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
+                                    model_name = "pH_H20_and_lime_65_no_dropout",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = False)
+
+perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
+                                    model_name = "pH_imp_and_lime_65_no_dropout",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = False)
+
+perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+                                    model_name = "pH_imp_and_lime_65_0_2_no_dropout",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = False)
+
+perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
+                                    model_name = "pH_full_imp_no_dropout",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = False)
+
+# remove weights 
+perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
+                                    model_name = "pH_only_H2O_no_weights",
+                                    include_weigths = False,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
+
+perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
+                                    model_name = "pH_pH_imp_no_weights",
+                                    include_weigths = False,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
+
+perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
+                                    model_name = "pH_H20_and_lime_65_no_weights",
+                                    include_weigths = False,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
+
+perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
+                                    model_name = "pH_imp_and_lime_65_no_weights",
+                                    include_weigths = False,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
+
+perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+                                    model_name = "pH_imp_and_lime_65_0_2_no_weights",
+                                    include_weigths = False,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
+
+perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
+                                    model_name = "pH_full_imp_no_weights",
+                                    include_weigths = False,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
+
+# No to either
+perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
+                                    model_name = "pH_only_H2O_no_weights_no_dropout",
+                                    include_weigths = False,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = False)
+
+perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
+                                    model_name = "pH_pH_imp_no_weights_no_dropout",
+                                    include_weigths = False,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = False)
+
+perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
+                                    model_name = "pH_H20_and_lime_65_no_weights_no_dropout",
+                                    include_weigths = False,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = False)
+
+perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
+                                    model_name = "pH_imp_and_lime_65_no_weights_no_dropout",
+                                    include_weigths = False,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = False)
+
+perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+                                    model_name = "pH_imp_and_lime_65_0_2_no_weights_no_dropout",
+                                    include_weigths = False,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = False)
+
+perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
+                                    model_name = "pH_full_imp_no_weights_no_dropout",
+                                    include_weigths = False,
+                                    list_of_dependent_var = ["pH"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = False)
+
+# Export results to CSV
+results_validation.to_csv('./tuning_results/predictions_validation_pH.csv', index=False)
+results_test.to_csv('./tuning_results/predictions_test_pH.csv', index=False)
 
 
 # single output lime: 
@@ -207,40 +439,40 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
 # results_test.to_csv('./tuning_results/predictions_test_lime.csv', index=False)
 
 
-# two output: 
-perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
-                                    model_name = "both_only_H2O",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH", "lime"])
+# # two output: 
+# perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
+#                                     model_name = "both_only_H2O",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH", "lime"])
 
-perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
-                                    model_name = "both_pH_imp",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH","lime"])
+# perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
+#                                     model_name = "both_pH_imp",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH","lime"])
 
-perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
-                                    model_name = "both_H20_and_lime_65",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH","lime"])
-
-
-perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
-                                    model_name = "both_imp_and_lime_65",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH","lime"])
-
-perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
-                                    model_name = "both_imp_and_lime_65_0_2",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH","lime"])
-
-perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
-                                    model_name = "both_full_imp",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH","lime"])
+# perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
+#                                     model_name = "both_H20_and_lime_65",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH","lime"])
 
 
-# Export results to CSV
-results_validation.to_csv('./tuning_results/predictions_validation_both.csv', index=False)
-results_test.to_csv('./tuning_results/predictions_test_both.csv', index=False)
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
+#                                     model_name = "both_imp_and_lime_65",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH","lime"])
+
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+#                                     model_name = "both_imp_and_lime_65_0_2",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH","lime"])
+
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
+#                                     model_name = "both_full_imp",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH","lime"])
+
+
+# # Export results to CSV
+# results_validation.to_csv('./tuning_results/predictions_validation_both.csv', index=False)
+# results_test.to_csv('./tuning_results/predictions_test_both.csv', index=False)
 

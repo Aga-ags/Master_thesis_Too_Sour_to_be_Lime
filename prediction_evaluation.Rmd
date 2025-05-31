@@ -126,7 +126,9 @@ df_long_pH_dropout_test
 
 ```
 
+
 # Perform data evaluation 
+
 ```{r}
 metrics_by_model <-function(df_long, observed_column, predicted_column){
   observed_col <- enquo(observed_column)
@@ -141,6 +143,10 @@ metrics_by_model <-function(df_long, observed_column, predicted_column){
       R2   = 1 - sum((!!observed_col - !!predicted_col)^2, na.rm = TRUE) / sum((!!observed_col - mean(!!observed_col, na.rm = TRUE))^2, na.rm = TRUE)
     )
 }
+```
+
+```{r}
+
 
 pH_metrics <- metrics_by_model(df_long_pH, observed_column = pH, predicted_column = predicted_pH)
 pH_metrics
@@ -260,5 +266,62 @@ ggplot(df, aes(x = pH_and_lime_try_runlime))+
 
 ```{r rotated_axis_plot}
 
+```
+
+
+
+
+# Objective function experiment
+
+```{r load_data_objective_exp}
+df_objective_val <- read.csv(file="./tuning_results/predictions_validation_experiments.csv")
+df_objective_test <- read.csv(file="./tuning_results/predictions_test_experiments.csv")
+df_objective_val
+```
+```{r}
+pivot_to_pred_model <- function(df){
+  df |>
+  pivot_longer(
+    cols = -c(1:2),
+    names_pattern = "(pH|lime)_(.*)$",
+    names_to = c("predicted", "model"))
+}
+
+plot_observed_against_predicted <- function(df){
+  
+}
+```
+
+
+```{r}
+
+
+df_long_objective_val <- pivot_to_pred_model(df_objective_val)
+df_long_objective_val
+
+df_long_objective_test <- pivot_to_pred_model(df_objective_test)
+df_long_objective_test
+```
+```{r}
+df_long_objective_val|>
+  filter(predicted == "pH")|>
+metrics_by_model(pH, value)
+
+df_long_objective_val|>
+  filter(predicted == "lime")|>
+metrics_by_model(lime, value)
+
+df_long_objective_val|>
+  filter(predicted == "pH")|>
+ggplot(aes(x = pH, y = value)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  facet_wrap(~ model) +
+  labs(
+    title = "Relationship between observed and predicted pH values",
+    x = "Actual pH",
+    y = "Predicted pH"
+  ) +
+  theme_minimal()
 ```
 
