@@ -13,7 +13,7 @@ from keras import layers
 from keras import ops
 from keras.layers import Dropout
 import keras_tuner as kt
-from sklearn.metrics import r2_score
+import pickle
 
 # load data
 # validation
@@ -96,7 +96,7 @@ def build_model(hp, number_outputs, x_train, loss_function, include_dropout):
         model.add(Dropout(0.2))
 
     # Tune the number of hidden layers: 1 to 3
-    for i in range(hp.Int("num_layers", 1, 5)):
+    for i in range(hp.Int("num_layers", 0, 4)):
         model.add(
             layers.Dense(
                 units=hp.Choice(f"units_{i}", values=[16, 32, 64, 128]),
@@ -104,10 +104,16 @@ def build_model(hp, number_outputs, x_train, loss_function, include_dropout):
             ))
         if include_dropout:
             model.add(Dropout(0.2))
+    
+    model.add(layers.Dense(
+                units=hp.Choice(f"units_last_hidden_layer", values=[2, 16, 32, 64, 128]),
+                activation=hp.Choice("activation_last_hidden_layer", values=["relu", "tanh", "elu", "silu"])))
+    if include_dropout:
+        model.add(Dropout(0.2))
         
     
     # Output layer for regression
-    model.add(layers.Dense(number_outputs, activation="linear"))
+    model.add(layers.Dense(number_outputs, activation=hp.Choice("activation_last_layer", values=["linear", "relu"])))
     
     # Compile the model
     model.compile(
@@ -115,7 +121,8 @@ def build_model(hp, number_outputs, x_train, loss_function, include_dropout):
             hp.Choice("learning_rate", [1e-2, 1e-3, 1e-4])
         ),
         loss=loss_function,
-        metrics=["mae", "mse", CustomMetric()]
+        metrics=["mae", "mse" #, CustomMetric()
+                 ]
     )
     
     return model
@@ -175,13 +182,13 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
     best_model.save("./tuning_results/"+ model_name + ".keras")
 
     # Evaluate best model on validation data
-    loss, mae, mse, zero_infalted_mse = best_model.evaluate(x_val, validation_y)
+    loss, mae, mse = best_model.evaluate(x_val, validation_y)
     rmse = np.sqrt(mse)
     
     print(f"Metrics of best model on validation set")
     print(f"MAE:  {mae:.4f}")
     print(f"MSE:  {mse:.4f}")
-    print(f"Zero inflated MSE:  {zero_infalted_mse:.4f}")
+    #print(f"Zero inflated MSE:  {zero_infalted_mse:.4f}")
 
     # save the predicted values for vizualization
     y_pred_val = best_model.predict(x_val)
@@ -192,43 +199,112 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
         results_test[model_name] = y_pred_test
 
     elif len(list_of_dependent_var) == 2:
-        results_validation[model_name + "pH"] = y_pred_val[:, [0]]
-        results_validation[model_name + "lime"] = y_pred_val[:, [1]]
-        results_test[model_name + "pH"] = y_pred_test[:, [0]]
-        results_test[model_name + "lime"] = y_pred_test[:, [1]]
+        results_validation[model_name + ".pH"] = y_pred_val[:, [0]]
+        results_validation[model_name + ".lime"] = y_pred_val[:, [1]]
+        results_test[model_name + ".pH"] = y_pred_test[:, [0]]
+        results_test[model_name + ".lime"] = y_pred_test[:, [1]]
 
     else:
         print("The output was not saved due to unexpeced number of variables")
 
+    # save best model training history
+    history = best_model.fit(
+    x_train,
+    training_y,
+    validation_data=(x_val, validation_y),
+    epochs=200,
+    batch_size=32,
+    sample_weight=sample_weights if include_weigths else None,
+    callbacks=[keras.callbacks.EarlyStopping(monitor= objective , patience=10, restore_best_weights=True)]
+)
+    with open("./tuning_results/" + model_name + "_history.pkl", "wb") as f:
+        pickle.dump(history.history, f)
 
-# single output pH: 
-# everything per pH imputation scenario
+# single output lime: 
+# everything per lime imputation scenario and inclusion of zero-inflated mse
+
+# perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
+#                                     model_name = "lime_pH_imp_try2",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["lime"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
+
+perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
+                                    model_name = "lime_imp_and_lime_65_try2",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["lime"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
+
+perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+                                    model_name = "lime_imp_and_lime_65_0_2_try2",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["lime"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
+
+
 # perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
-#                                     model_name = "pH_full_imp_try2",
-#                                     include_weigths = True,
-#                                     list_of_dependent_var = ["pH"],
+#                                     model_name = "lime_full_imp_try2",
+#                                     include_weigths = False,
+#                                     list_of_dependent_var = ["lime"],
 #                                     objective= "val_mse", 
 #                                     loss_function = "mse",
 #                                     include_dropout = True)
 
-# perform_moodel_training_with_tuning(imputation_scenario = "only_h2o_ca2cl_all_lime",
-#                                     model_name = "pH_only_h2o_ca2cl_all_lime_try2",
+# perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
+#                                     model_name = "lime_pH_imp_inflated_mse",
 #                                     include_weigths = True,
-#                                     list_of_dependent_var = ["pH"],
-#                                     objective= "val_mse", 
-#                                     loss_function = "mse",
-#                                     include_dropout = True)
-
-# perform_moodel_training_with_tuning(imputation_scenario = "only_ca2cl_all_lime",
-#                                     model_name = "pH_only_ca2cl_all_lime_try2",
-#                                     include_weigths = True,
-#                                     list_of_dependent_var = ["pH"],
-#                                     objective= "val_mse", 
+#                                     list_of_dependent_var = ["lime"],
+#                                     objective= kt.Objective("val_zero_inflated_mse", direction="min"), 
 #                                     loss_function = "mse",
 #                                     include_dropout = True)
 
 
-# results_validation.to_csv('./tuning_results/predictions_validation_pH_try_2.csv', index=False)
-# results_test.to_csv('./tuning_results/predictions_test_pH_try_2.csv', index=False)
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
+#                                     model_name = "lime_imp_and_lime_65_inflated_mse",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["lime"],
+#                                     objective= kt.Objective("val_zero_inflated_mse", direction="min"), 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+#                                     model_name = "lime_imp_and_lime_65_0_2_inflated_mse",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["lime"],
+#                                     objective= kt.Objective("val_zero_inflated_mse", direction="min"), 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
+
+# perform_moodel_training_with_tuning(imputation_scenario= "full_imp", 
+#                                     model_name = "lime_pH_imp_inflated_mse",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["lime"],
+#                                     objective= kt.Objective("val_zero_inflated_mse", direction="min"), 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
+#                                     model_name = "lime_full_imp_inflated_mse",
+#                                     include_weigths = False,
+#                                     list_of_dependent_var = ["lime"],
+#                                     objective= kt.Objective("val_zero_inflated_mse", direction="min"), 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
+
+
+
+# results_validation.to_csv('./tuning_results/predictions_validation_lime_try_2.csv', index=False)
+# results_test.to_csv('./tuning_results/predictions_test_lime_try_2.csv', index=False)
+
+
+
+
+
 
 

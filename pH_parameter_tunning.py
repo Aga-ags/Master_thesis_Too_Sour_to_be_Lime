@@ -10,7 +10,7 @@ import keras
 from keras import layers
 from keras import ops
 from keras.layers import Dropout
-import kerastuner as kt
+import keras_tuner as kt
 from sklearn.metrics import r2_score
 
 # load data
@@ -171,7 +171,7 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
     # Get the best model
     best_model = tuner.get_best_models(num_models=1)[0]
     # Save the best model
-    best_model.save("./tuning_results/"+ model_name + ".h5")
+    best_model.save("./tuning_results/"+ model_name + ".keras")
 
     # Evaluate best model on validation data
     loss, mae, mse, zero_infalted_mse = best_model.evaluate(x_val, validation_y)
@@ -202,241 +202,307 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
 
 # single output pH: 
 # everything per imputation scenario
-perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
-                                    model_name = "pH_only_H2O",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = True)
+# perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
+#                                     model_name = "pH_only_H2O",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
 
-perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
-                                    model_name = "pH_pH_imp",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = True)
+# perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
+#                                     model_name = "pH_pH_imp",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
 
-perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
-                                    model_name = "pH_H20_and_lime_65",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = True)
+# perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
+#                                     model_name = "pH_H20_and_lime_65",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
 
-perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
-                                    model_name = "pH_imp_and_lime_65",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = True)
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
+#                                     model_name = "pH_imp_and_lime_65",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
 
-perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
-                                    model_name = "pH_imp_and_lime_65_0_2",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = True)
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+#                                     model_name = "pH_imp_and_lime_65_0_2",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
 
-perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
-                                    model_name = "pH_full_imp",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = True)
-# remove dropout
-perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
-                                    model_name = "pH_only_H2O_no_dropout",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = False)
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
+#                                     model_name = "pH_full_imp",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
 
-perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
-                                    model_name = "pH_pH_imp_no_dropout",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = False)
+# perform_moodel_training_with_tuning(imputation_scenario = "only_h2o_ca2cl_all_lime",
+#                                     model_name = "pH_only_h2o_ca2cl_all_lime",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
 
-perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
-                                    model_name = "pH_H20_and_lime_65_no_dropout",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = False)
+# perform_moodel_training_with_tuning(imputation_scenario = "only_ca2cl_all_lime",
+#                                     model_name = "pH_only_ca2cl_all_lime",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
 
-perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
-                                    model_name = "pH_imp_and_lime_65_no_dropout",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = False)
+# results_validation.to_csv('./tuning_results/predictions_validation_pH.csv', index=False)
+# results_test.to_csv('./tuning_results/predictions_test_pH.csv', index=False)
 
-perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
-                                    model_name = "pH_imp_and_lime_65_0_2_no_dropout",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = False)
+# # remove dropout
+# perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
+#                                     model_name = "pH_only_H2O_no_dropout",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = False)
 
-perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
-                                    model_name = "pH_full_imp_no_dropout",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = False)
+# perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
+#                                     model_name = "pH_pH_imp_no_dropout",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = False)
 
-# remove weights 
-perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
-                                    model_name = "pH_only_H2O_no_weights",
-                                    include_weigths = False,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = True)
+# perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
+#                                     model_name = "pH_H20_and_lime_65_no_dropout",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = False)
 
-perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
-                                    model_name = "pH_pH_imp_no_weights",
-                                    include_weigths = False,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = True)
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
+#                                     model_name = "pH_imp_and_lime_65_no_dropout",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = False)
 
-perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
-                                    model_name = "pH_H20_and_lime_65_no_weights",
-                                    include_weigths = False,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = True)
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+#                                     model_name = "pH_imp_and_lime_65_0_2_no_dropout",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = False)
 
-perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
-                                    model_name = "pH_imp_and_lime_65_no_weights",
-                                    include_weigths = False,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = True)
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
+#                                     model_name = "pH_full_imp_no_dropout",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = False)
 
-perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
-                                    model_name = "pH_imp_and_lime_65_0_2_no_weights",
-                                    include_weigths = False,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = True)
+# perform_moodel_training_with_tuning(imputation_scenario = "only_h2o_ca2cl_all_lime",
+#                                     model_name = "pH_only_h2o_ca2cl_all_lime_no_dropout",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = False)
 
-perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
-                                    model_name = "pH_full_imp_no_weights",
-                                    include_weigths = False,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = True)
+# perform_moodel_training_with_tuning(imputation_scenario = "only_ca2cl_all_lime",
+#                                     model_name = "pH_only_ca2cl_all_lime_no_dropout",
+#                                     include_weigths = True,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = False)
 
-# No to either
-perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
-                                    model_name = "pH_only_H2O_no_weights_no_dropout",
-                                    include_weigths = False,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = False)
 
-perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
-                                    model_name = "pH_pH_imp_no_weights_no_dropout",
-                                    include_weigths = False,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = False)
+# results_validation.to_csv('./tuning_results/predictions_validation_pH_no_dropout.csv', index=False)
+# results_test.to_csv('./tuning_results/predictions_test_pH_no_droupout.csv', index=False)
 
-perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
-                                    model_name = "pH_H20_and_lime_65_no_weights_no_dropout",
-                                    include_weigths = False,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = False)
+# # remove weights 
+# perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
+#                                     model_name = "pH_only_H2O_no_weights",
+#                                     include_weigths = False,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
 
-perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
-                                    model_name = "pH_imp_and_lime_65_no_weights_no_dropout",
-                                    include_weigths = False,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = False)
+# perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
+#                                     model_name = "pH_pH_imp_no_weights",
+#                                     include_weigths = False,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
 
-perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
-                                    model_name = "pH_imp_and_lime_65_0_2_no_weights_no_dropout",
-                                    include_weigths = False,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = False)
+# perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
+#                                     model_name = "pH_H20_and_lime_65_no_weights",
+#                                     include_weigths = False,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
 
-perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
-                                    model_name = "pH_full_imp_no_weights_no_dropout",
-                                    include_weigths = False,
-                                    list_of_dependent_var = ["pH"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
-                                    include_dropout = False)
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
+#                                     model_name = "pH_imp_and_lime_65_no_weights",
+#                                     include_weigths = False,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
 
-# Export results to CSV
-results_validation.to_csv('./tuning_results/predictions_validation_pH.csv', index=False)
-results_test.to_csv('./tuning_results/predictions_test_pH.csv', index=False)
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+#                                     model_name = "pH_imp_and_lime_65_0_2_no_weights",
+#                                     include_weigths = False,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
+#                                     model_name = "pH_full_imp_no_weights",
+#                                     include_weigths = False,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
+# results_validation.to_csv('./tuning_results/predictions_validation_pH_no_weights.csv', index=False)
+# results_test.to_csv('./tuning_results/predictions_test_pH_no_weights.csv', index=False)
+
+# # No to either
+# perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
+#                                     model_name = "pH_only_H2O_no_weights_no_dropout",
+#                                     include_weigths = False,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = False)
+
+# perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
+#                                     model_name = "pH_pH_imp_no_weights_no_dropout",
+#                                     include_weigths = False,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = False)
+
+# perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
+#                                     model_name = "pH_H20_and_lime_65_no_weights_no_dropout",
+#                                     include_weigths = False,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = False)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
+#                                     model_name = "pH_imp_and_lime_65_no_weights_no_dropout",
+#                                     include_weigths = False,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = False)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+#                                     model_name = "pH_imp_and_lime_65_0_2_no_weights_no_dropout",
+#                                     include_weigths = False,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = False)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
+#                                     model_name = "pH_full_imp_no_weights_no_dropout",
+#                                     include_weigths = False,
+#                                     list_of_dependent_var = ["pH"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = False)
+
+# # Export results to CSV
+# results_validation.to_csv('./tuning_results/predictions_validation_pH_no_either.csv', index=False)
+# results_test.to_csv('./tuning_results/predictions_test_pH_no_either.csv', index=False)
 
 
 # single output lime: 
 # perform_moodel_training_with_tuning(imputation_scenario= "only_H20", 
 #                                     model_name = "lime_only_H2O",
 #                                     include_weigths = True,
-#                                     list_of_dependent_var = ["lime"])
+#                                     list_of_dependent_var = ["lime"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
 
-# perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
-#                                     model_name = "lime_pH_imp",
-#                                     include_weigths = True,
-#                                     list_of_dependent_var = ["lime"])
+perform_moodel_training_with_tuning(imputation_scenario= "pH_imp", 
+                                    model_name = "lime_pH_imp",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["lime"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
 
 # perform_moodel_training_with_tuning(imputation_scenario=  "H20_and_lime_65",
 #                                     model_name = "lime_H20_and_lime_65",
 #                                     include_weigths = True,
-#                                     list_of_dependent_var = ["lime"])
+#                                     list_of_dependent_var = ["lime"],
+#                                     objective= "val_mse", 
+#                                     loss_function = "mse",
+#                                     include_dropout = True)
 
+perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
+                                    model_name = "lime_imp_and_lime_65",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["lime"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
 
-# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
-#                                     model_name = "lime_imp_and_lime_65",
-#                                     include_weigths = True,
-#                                     list_of_dependent_var = ["lime"])
+perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+                                    model_name = "lime_imp_and_lime_65_0_2",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["lime"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
 
-# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
-#                                     model_name = "lime_imp_and_lime_65_0_2",
-#                                     include_weigths = True,
-#                                     list_of_dependent_var = ["lime"])
+perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
+                                    model_name = "lime_full_imp",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["lime"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
 
-# perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
-#                                     model_name = "lime_full_imp",
-#                                     include_weigths = True,
-#                                     list_of_dependent_var = ["lime"])
+perform_moodel_training_with_tuning(imputation_scenario = "full_imp",
+                                    model_name = "lime_full_imp_zero_inflated_mse",
+                                    include_weigths = True,
+                                    list_of_dependent_var = ["lime"],
+                                    objective= "val_mse", 
+                                    loss_function = "mse",
+                                    include_dropout = True)
 
-
-# # Export results to CSV
-# results_validation.to_csv('./tuning_results/predictions_validation_lime.csv', index=False)
-# results_test.to_csv('./tuning_results/predictions_test_lime.csv', index=False)
+# Export results to CSV
+results_validation.to_csv('./tuning_results/predictions_validation_lime.csv', index=False)
+results_test.to_csv('./tuning_results/predictions_test_lime.csv', index=False)
 
 
 # # two output: 

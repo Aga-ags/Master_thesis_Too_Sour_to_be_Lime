@@ -166,10 +166,27 @@ observed_sites|>
 ```
 
 ```{r}
-columns <- df|>
-  dplyr::select(-"x", -"y", - "split")|>
-  colnames()
-CreateTableOne(vars =columns, strata = "split", data = df)
+#columns <- df|>
+#  dplyr::select(-"x", -"y", - "split")|>
+#  colnames()
+#CreateTableOne(vars =columns, strata = "split", data = df)
+```
+
+# Compare pH and lime distribution across splits
+```{r}
+ggplot(df, aes(x = pH))+
+  geom_histogram(bins = 20)+
+  facet_wrap(~ split, scales = "free")
+
+ggplot(df, aes(x = pH))+
+  geom_histogram(bins = 20)
+
+ggplot(df, aes(x = lime))+
+  geom_histogram(bins = 20)+
+  facet_wrap(~ split, scales = "free")
+
+ggplot(df, aes(x = lime))+
+  geom_histogram(bins = 20)
 ```
 
 
@@ -245,6 +262,22 @@ x_tain_pH_imp_and_lime_65_0_2<- train|>
 y_tain_pH_imp_and_lime_65_0_2<- train|>
   filter(lime_imputed_3_5 == FALSE)|>
   dplyr::select("pH", "lime")
+
+x_tain_only_h2o_ca2cl<- train|>
+  filter( pH_origin != "site")|>
+  dplyr::select(!c("pH", "pH_origin", "x", "y",   "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
+  as.matrix()
+y_tain_only_h2o_ca2cl<- train|>
+  filter(pH_origin != "site")|>
+  dplyr::select("pH", "lime")
+
+x_tain_only_ca2cl<- train|>
+  filter( pH_origin != "site" & pH_origin != "H2O")|>
+  dplyr::select(!c("pH", "pH_origin", "x", "y",   "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
+  as.matrix()
+y_tain_only_ca2cl<- train|>
+  filter(pH_origin != "site" & pH_origin != "H2O")|>
+  dplyr::select("pH", "lime")
 ```
 
 ```{r}
@@ -279,6 +312,12 @@ write.csv(y_tain_pH_imp_and_lime_65,file='../data/y_train_pH_imp_and_lime_65.csv
 
 write.csv(x_tain_pH_imp_and_lime_65_0_2,file='../data/x_train_pH_imp_and_lime_65_0_2.csv', row.names=FALSE)
 write.csv(y_tain_pH_imp_and_lime_65_0_2,file='../data/y_train_pH_imp_and_lime_65_0_2.csv', row.names=FALSE)
+
+write.csv(x_tain_only_h2o_ca2cl,file='../data/x_train_only_h2o_ca2cl_all_lime.csv', row.names=FALSE)
+write.csv(y_tain_only_h2o_ca2cl,file='../data/y_train_only_h2o_ca2cl_all_lime.csv', row.names=FALSE)
+
+write.csv(x_tain_only_ca2cl,file='../data/x_train_only_ca2cl_all_lime.csv', row.names=FALSE)
+write.csv(y_tain_only_ca2cl,file='../data/y_train_only_ca2cl_all_lime.csv', row.names=FALSE)
 
 
 write.csv(x_valid,file='../data/x_valid.csv', row.names=FALSE)
@@ -325,6 +364,19 @@ sample_wight_pH_imp_and_lime_65_0_2<- train|>
   dplyr::select("sample_weight")
 
 write.csv(sample_wight_pH_imp_and_lime_65_0_2,file='../data/sample_weights_pH_imp_and_lime_65_0_2.csv', row.names=FALSE)
+
+sample_wight_only_h2o_ca2cl_all_lime<- train|>
+  filter( pH_origin != "site")|>
+  dplyr::select("sample_weight")
+
+write.csv(sample_wight_only_h2o_ca2cl_all_lime,file='../data/sample_weights_only_h2o_ca2cl_all_lime.csv', row.names=FALSE)
+
+sample_wight_only_ca2cl_all_lime<- train|>
+  filter(pH_origin != "site" & pH_origin != "H2O")|>
+  dplyr::select("sample_weight")
+
+write.csv(sample_wight_only_ca2cl_all_lime,file='../data/sample_weights_only_ca2cl_all_lime.csv', row.names=FALSE)
 ```
+
 
 

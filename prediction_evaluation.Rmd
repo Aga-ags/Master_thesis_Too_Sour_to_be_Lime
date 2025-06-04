@@ -7,278 +7,14 @@ output: html_document
 
 ```{r}
 library(tidyverse)
-```
-
-# Load data
-
-```{r load_data}
-# pH only
-df_pH <- read.csv(file="./tuning_results/predictions_validation_pH_weights.csv")
-df_pH
-
-df_long_pH <- df_pH %>%
-  pivot_longer(
-    cols = contains("pH") & !matches("^pH$"),  # all columns with "pH" except exactly "pH"
-    names_to = "model",
-    values_to = "predicted_pH"
-  )
-
-df_long_pH$model <- ordered(df_long_pH$model, levels =c("pH_only_H2O", "pH_pH_imp", "pH_H20_and_lime_6", "pH_imp_and_lime_65", "pH_imp_and_lime_65_0_2", "pH_full_imp"))
-df_long_pH
-
-df_pH_test <- read.csv(file="./tuning_results/predictions_test_pH_weights.csv")
-df_pH_test
-
-df_long_pH_test <- df_pH_test %>%
-  pivot_longer(
-    cols = contains("pH") & !matches("^pH$"),  # all columns with "pH" except exactly "pH"
-    names_to = "model",
-    values_to = "predicted_pH"
-  )
-
-df_long_pH_test$model <- ordered(df_long_pH_test$model, levels =c("pH_only_H2O", "pH_pH_imp", "pH_H20_and_lime_6", "pH_imp_and_lime_65", "pH_imp_and_lime_65_0_2", "pH_full_imp"))
-df_long_pH_test
-
-
-# lime only
-df_lime_and_both <- read.csv(file="./tuning_results/predictions_validation_lime_and_both_weights.csv")
-df_lime_and_both
-
-df_long_lime <- df_lime_and_both %>%
-  pivot_longer(
-    cols = 3:8, 
-    names_to = "model",
-    values_to = "predicted_lime"
-  )|>
-  select("lime", "model", "predicted_lime")
-df_long_lime$model <- ordered(df_long_lime$model, levels =c("lime_only_H2O", "lime_pH_imp", "lime_H20_and_lime_65", "lime_imp_and_lime_65", "lime_imp_and_lime_65_0_2", "lime_full_imp"))
-df_long_lime
-
-
-df_long_both_pH <- df_lime_and_both |>
-  select(! 3:8)|>
-  pivot_longer(
-    cols = matches("pH$") & contains("both"),
-    names_to = c("model"),
-    values_to = "predicted_pH",
-    names_pattern = "(.*)pH")|>
-  select("pH", "model", "predicted_pH")
-
-df_long_both_pH$model <- ordered(df_long_both_pH$model, levels =c("both_only_H2O", "both_pH_imp", "both_H20_and_lime_65", "both_imp_and_lime_65", "both_imp_and_lime_65_0_2", "both_full_imp"))
-df_long_both_pH
-
-
-df_long_both_lime <- df_lime_and_both |>
-  select(! 3:8)|>
-  pivot_longer(
-    cols = matches("lime$") & contains("both"),
-    names_to = c("model"),
-    values_to = "predicted_lime",
-    names_pattern = "(.*)lime")|>
-  select("lime", "model", "predicted_lime")
-
-
-df_long_both_lime$model <- ordered(df_long_both_lime$model, levels =c("both_only_H2O", "both_pH_imp", "both_H20_and_lime_65", "both_imp_and_lime_65", "both_imp_and_lime_65_0_2", "both_full_imp"))
-df_long_both_lime
-
-
-# pH no weights
-df_pH_no_weights <- read.csv(file="./tuning_results/predictions_validation_ph_no_weights.csv")
-df_pH_no_weights
-
-df_long_pH_no_weights <- df_pH_no_weights %>%
-  pivot_longer(
-    cols = contains("pH") & !matches("^pH$"),  # all columns with "pH" except exactly "pH"
-    names_to = "model",
-    values_to = "predicted_pH"
-  )
-
-df_long_pH_no_weights$model <- ordered(df_long_pH_no_weights$model, levels =c("pH_no_weights_only_H2O", "pH_no_weights_pH_imp", "pH_no_weights_H20_and_lime_65", "pH_no_weights_imp_and_lime_65", "pH_no_weights_imp_and_lime_65_0_2", "pH_no_weights_full_imp"))
-df_long_pH_no_weights
-
-
-# dropout pH:
-df_pH_dropout <- read.csv(file="./tuning_results/predictions_validation_dropout.csv")
-df_pH_dropout
-
-df_long_pH_dropout <- df_pH_dropout %>%
-  pivot_longer(
-    cols = contains("pH") & !matches("^pH$"),  # all columns with "pH" except exactly "pH"
-    names_to = "model",
-    values_to = "predicted_pH"
-  )
-
-df_long_pH_dropout$model <- ordered(df_long_pH_dropout$model, levels =c("pH_dropout_only_H2O", "pH_dropout_pH_imp", "pH_dropout_H20_and_lime_65", "pH_dropout_imp_and_lime_65", "pH_dropout_imp_and_lime_65_0_2", "pH_dropout_full_imp"))
-df_long_pH_dropout
-
-df_pH_dropout_test <- read.csv(file="./tuning_results/predictions_test_dropout.csv")
-
-df_long_pH_dropout_test <- df_pH_dropout_test %>%
-  pivot_longer(
-    cols = contains("pH") & !matches("^pH$"),  # all columns with "pH" except exactly "pH"
-    names_to = "model",
-    values_to = "predicted_pH"
-  )
-
-df_long_pH_dropout_test$model <- ordered(df_long_pH_dropout_test$model, levels =c("pH_dropout_only_H2O", "pH_dropout_pH_imp", "pH_dropout_H20_and_lime_65", "pH_dropout_imp_and_lime_65", "pH_dropout_imp_and_lime_65_0_2", "pH_dropout_full_imp"))
-df_long_pH_dropout_test
-
-
+library(rlang)
 ```
 
 
-# Perform data evaluation 
 
+# Functions
 ```{r}
-metrics_by_model <-function(df_long, observed_column, predicted_column){
-  observed_col <- enquo(observed_column)
-  predicted_col <- enquo(predicted_column)
-  
-  df_long %>%
-    group_by(model) %>%
-    summarise(
-      MAE  = mean(abs(!!observed_col - !!predicted_col), na.rm = TRUE),
-      MSE  = mean((!!observed_col - !!predicted_col)^2, na.rm = TRUE),
-      RMSE = sqrt(mean((!!observed_col - !!predicted_col)^2, na.rm = TRUE)),
-      R2   = 1 - sum((!!observed_col - !!predicted_col)^2, na.rm = TRUE) / sum((!!observed_col - mean(!!observed_col, na.rm = TRUE))^2, na.rm = TRUE)
-    )
-}
-```
-
-```{r}
-
-
-pH_metrics <- metrics_by_model(df_long_pH, observed_column = pH, predicted_column = predicted_pH)
-pH_metrics
-
-lime_metrics <- metrics_by_model(df_long_lime, observed_column = lime, predicted_column = predicted_lime)
-lime_metrics
-
-lime_metrics_both <- metrics_by_model(df_long_both_pH, observed_column = pH, predicted_column = predicted_pH)
-lime_metrics_both
-
-lime_metrics_both <- metrics_by_model(df_long_both_lime, observed_column = lime, predicted_column = predicted_lime)
-lime_metrics_both
-
-pH_dropout_metrics <- metrics_by_model(df_long_pH_dropout, observed_column = pH, predicted_column = predicted_pH)
-pH_dropout_metrics
-
-pH_dropout_metrics_test <- metrics_by_model(df_long_pH_dropout_test, observed_column = pH, predicted_column = predicted_pH)
-pH_dropout_metrics_test
-
-pH_metrics_test <- metrics_by_model(df_long_pH_test, observed_column = pH, predicted_column = predicted_pH)
-pH_metrics_test
-
-
-pH_dropout_metrics <- metrics_by_model(df_long_pH_dropout, observed_column = pH, predicted_column = predicted_pH)
-pH_dropout_metrics
-
-
-
-pH_no_weights_metrics <- metrics_by_model(df_long_pH_no_weights, observed_column = pH, predicted_column = predicted_pH)
-pH_no_weights_metrics
-
-```
-
-
-
-
-
-```{r observed_vs_predicted_plot}
-ggplot(df_long_pH, aes(x = pH, y = predicted_pH)) +
-  geom_point() +
-  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
-  facet_wrap(~ model) +
-  labs(
-    title = "Relationship between observed and predicted pH values",
-    x = "Actual pH",
-    y = "Predicted pH"
-  ) +
-  theme_minimal()
-
-
-ggplot(df_long_lime, aes(x = lime, y = predicted_lime)) +
-  geom_point() +
-  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
-  facet_wrap(~ model) +
-  labs(
-    title = "Relationship between observed and predicted pH values",
-    x = "Actual pH",
-    y = "Predicted pH"
-  ) +
-  theme_minimal()
-
-```
-
-```{r studying_residuals}
-df$residuals <- df$pH - df$pH_only_H2O
-
-ggplot(df, aes(x = pH_only_H2O, y = residuals)) +
-  geom_point(color = "darkorange2") +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(title = "Residuals vs Fitted", x = "Predicted", y = "Residuals") +
-  theme_minimal()
-
-ggplot(df, aes(x = residuals)) +
-  geom_histogram(bins = 30, fill = "darkorange2",color = "black") +
-  labs(title = "Histogram of Residuals", x = "Residual", y = "Count") +
-  theme_minimal()
-
-
-
-
-```
-
-
-```{r comaprison_of_y_distribution}
-# Is the double peak pH structure preserved?
-
-ggplot(df, aes(x = pH))+
-  geom_histogram(bins = 20)
-
-
-ggplot(df, aes(x = pH_try_run))+
-  geom_histogram(bins = 20)
-
-ggplot(df, aes(x = pH_and_lime_try_runpH))+
-  geom_histogram(bins = 20)
-
-
-ggplot(df, aes(x = lime))+
-  geom_histogram(bins = 20)
-
-ggplot(df, aes(x = pH_and_lime_try_runlime))+
-  geom_histogram(bins = 20)
-
-```
-
-
-# Inference
-```{r predictor_importance}
-
-```
-
-```{r responce_plots}
-# responce curves, distribution of one against the other??
-
-```
-
-
-```{r rotated_axis_plot}
-
-```
-
-
-
-
-# Objective function experiment
-
-```{r load_data_objective_exp}
-df_objective_val <- read.csv(file="./tuning_results/predictions_validation_experiments.csv")
-df_objective_test <- read.csv(file="./tuning_results/predictions_test_experiments.csv")
-df_objective_val
-```
-```{r}
+# Pivot to longer 
 pivot_to_pred_model <- function(df){
   df |>
   pivot_longer(
@@ -292,36 +28,256 @@ plot_observed_against_predicted <- function(df){
 }
 ```
 
-
 ```{r}
-
-
-df_long_objective_val <- pivot_to_pred_model(df_objective_val)
-df_long_objective_val
-
-df_long_objective_test <- pivot_to_pred_model(df_objective_test)
-df_long_objective_test
+# Calculate performace metrics
+metrics_by_model <-function(df_long, outcome){
+  observed_col <- sym(outcome)
+  
+  df_long %>%
+    filter(predicted == outcome)|>
+    group_by(model) %>%
+    summarise(
+      MAE  = mean(abs(!!observed_col - value), na.rm = TRUE),
+      MSE  = mean((!!observed_col - value)^2, na.rm = TRUE),
+      RMSE = sqrt(mean((!!observed_col - value)^2, na.rm = TRUE)),
+      R2   = 1 - sum((!!observed_col - value)^2, na.rm = TRUE) / sum((!!observed_col - mean(!!observed_col, na.rm = TRUE))^2, na.rm = TRUE),
+             
+      `MSE zero values` = {
+        y_true <- pull(cur_data(), !!observed_col)
+        y_pred <- pull(cur_data(), value)
+        if (sum(y_true == 0, na.rm = TRUE) > 0) {
+          mean((y_pred[y_true == 0] - y_true[y_true == 0])^2, na.rm = TRUE)
+        } else {
+          0
+        }
+      },
+      
+      `MSE non-zero values` = {
+        y_true <- pull(cur_data(), !!observed_col)
+        y_pred <- pull(cur_data(), value)
+        if (sum(y_true > 0, na.rm = TRUE) > 0) {
+          mean((y_pred[y_true > 0] - y_true[y_true > 0])^2, na.rm = TRUE)
+        } else {
+          0
+        }
+      },
+      
+      `Zero-inflated MSE` = (`MSE zero values` + `MSE non-zero values`) / 2
+    )|>
+    print()
+}
 ```
-```{r}
-df_long_objective_val|>
-  filter(predicted == "pH")|>
-metrics_by_model(pH, value)
 
-df_long_objective_val|>
-  filter(predicted == "lime")|>
-metrics_by_model(lime, value)
-
-df_long_objective_val|>
-  filter(predicted == "pH")|>
-ggplot(aes(x = pH, y = value)) +
+```{r funtion_plot_observed_predicted}
+plot_observed_predicted <-function(df_long, outcome){
+  plot <- df_long |>
+    filter(predicted == outcome)|>
+    ggplot(aes(x = !!sym(outcome), y = value)) +
   geom_point() +
   geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
   facet_wrap(~ model) +
   labs(
-    title = "Relationship between observed and predicted pH values",
-    x = "Actual pH",
-    y = "Predicted pH"
+    title = paste("Relationship between observed and predicted", outcome, "values"),
+    x = paste("Actual", outcome),
+    y = paste("Predicted", outcome)
   ) +
   theme_minimal()
+  
+  print(plot)
+}
 ```
 
+```{r functions_plot_residuals}
+plot_residuals <-function(df_long, outcome){
+  df <- df_long|>
+   filter(predicted == outcome)|>
+    mutate(residuals = !!sym(outcome) - value)
+  
+  res_dist1 <- ggplot(df, aes(x = value, y = residuals)) +
+  geom_point(color = "darkorange2") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = paste("Residuals vs Fitted for", outcome), x = "Predicted", y = "Residuals") +
+  theme_minimal()+
+     facet_wrap(~ model)
+  
+  res_dist2 <- ggplot(df, aes(x = residuals)) +
+  geom_histogram(bins = 30, fill = "darkorange2",color = "black") +
+  labs(title = paste("Distribution of residuals for", outcome), x = "Residual", y = "Count") +
+  theme_minimal()+
+     facet_wrap(~ model)
+  
+  print(res_dist1)
+  print(res_dist2)
+}
+
+
+```
+
+```{r compare_output_distributions}
+
+plot_compare_output_distributions <-function(df_long, outcome){
+  df <- df_long|>
+   filter(predicted == outcome)
+  
+    predicted_distribution_validation_data <- ggplot(df, aes())+
+    geom_histogram(aes(x = !!sym(outcome)), fill = "black")+
+    geom_histogram(aes(x = value), fill = "red", alpha = 0.7)+
+    labs(title = paste("Distribution of predicted", outcome, "in validation data"), x = "Observed values") +
+  theme_minimal()+
+      facet_wrap(~ model)
+    
+  print(predicted_distribution_validation_data)
+  
+}
+
+```
+
+```{r}
+analyze_output <- function(df_long, outcome){
+  metrics_by_model(df_long, outcome)
+  plot_observed_predicted(df_long, outcome)
+  plot_residuals(df_long, outcome)
+  plot_compare_output_distributions(df_long, outcome)
+}
+```
+
+# Load data
+```{r load_pH_base}
+# pH only
+df_pH <- read.csv(file="./tuning_results/predictions_validation_pH.csv")
+df_pH
+
+df_long_pH <- pivot_to_pred_model(df_pH)
+
+df_long_pH$model <- ordered(df_long_pH$model, levels =c("only_H2O", "pH_imp", "H20_and_lime_65", "imp_and_lime_65", "imp_and_lime_65_0_2", "full_imp", "only_h2o_ca2cl_all_lime", "only_ca2cl_all_lime"))
+df_long_pH
+
+df_pH_test <- read.csv(file="./tuning_results/predictions_test_pH.csv")
+df_pH_test
+
+df_long_pH_test <- pivot_to_pred_model(df_pH_test)
+
+df_long_pH_test$model <- ordered(df_long_pH_test$model, levels =c("only_H2O", "pH_imp", "H20_and_lime_65", "imp_and_lime_65", "imp_and_lime_65_0_2", "full_imp", "only_h2o_ca2cl_all_lime", "only_ca2cl_all_lime"))
+df_long_pH_test
+```
+
+```{r}
+# pH weigths and dropout experiments 
+
+# no weights
+
+df_pH_no_weights <- read.csv(file="./tuning_results/predictions_validation_pH_no_weights.csv")
+df_pH_no_weights
+
+df_long_pH_no_weights <- pivot_to_pred_model(df_pH_no_weights)
+
+
+# no dropout
+
+df_pH_no_dropout <- read.csv(file="./tuning_results/predictions_validation_pH_no_dropout.csv")
+df_pH_no_dropout
+
+df_long_pH_no_dropout <- pivot_to_pred_model(df_pH_no_dropout)
+
+# no either 
+
+df_pH_no_either <- read.csv(file="./tuning_results/predictions_validation_pH_no_either.csv")
+df_pH_no_either
+
+df_long_pH_no_either <- pivot_to_pred_model(df_pH_no_either)
+```
+
+```{r load_experiments_ph}
+df_pH_experiments <- read.csv(file="./tuning_results/predictions_validation_pH_try_2.csv")
+df_pH_experiments
+
+df_long_pH_experiments <- pivot_to_pred_model(df_pH_experiments)
+
+```
+
+```{r load_lime_base}
+
+df_lime <- read.csv(file="./tuning_results/predictions_validation_lime_try_2.csv")
+df_lime
+
+df_lime_long <- pivot_to_pred_model(df_lime)
+df_lime_long
+```
+
+
+```{r load_both_df}
+df_both <- read.csv(file="./tuning_results/predictions_validation_both_try2.csv")
+df_both
+
+df_both_long <- df_both |>
+  pivot_longer(
+    cols = -c(`pH`, `lime`),  # keep observed columns
+    names_to = "model_pred", 
+    values_to = "value"
+  ) %>%
+  separate(model_pred, into = c("model", "predicted"), sep = "\\.", extra = "merge")
+
+df_both_long
+```
+```{r}
+# Regularization
+
+df_regularization <- read.csv(file="./tuning_results/validation_with_regulralization.csv")
+df_regularization
+
+df_regularization_long <- pivot_to_pred_model(df_regularization)
+df_regularization_long
+```
+
+
+# Perform data evaluation 
+
+```{r ph_analysis, fig.width = 10}
+# data evaluation on pH models with weights and dropout: 
+
+analyze_output(df_long_pH, outcome = "pH")
+
+analyze_output(df_long_pH_no_weights, outcome = "pH")
+
+analyze_output(df_long_pH_no_dropout, outcome = "pH")
+
+analyze_output(df_long_pH_no_either, outcome = "pH")
+
+```
+
+In terms of MSE and MAE: having all pH imputed is the best when weights are included and only H20 seems to be better with no weights. Including weights leads to a better perdiction and dropout also marginally improves the values. The effect much better when looking at distributions of full imp with and without dropout. 
+
+
+```{r}
+# Find performace matrics for base pH model
+pH_metrics <- metrics_by_model(df_long_pH_experiments, outcome = "pH")
+pH_metrics
+
+plot_observed_predicted(df_long_pH_experiments, outcome = "pH")
+
+plot_residuals(df_long_pH_experiments, outcome = "pH")
+
+plot_compare_output_distributions(df_long_pH_experiments, outcome = "pH")
+```
+```{r}
+# lime
+analyze_output(df_lime_long,  outcome = "lime")
+
+```
+```{r regularization_lime}
+
+
+analyze_output(df_regularization_long,  outcome = "lime")
+
+```
+
+```{r}
+# both
+analyze_output(df_both_long,  outcome = "pH")
+analyze_output(df_both_long,  outcome = "lime")
+
+
+# both_pH_imp_try2 is named incorrectly -> it's full imputation 
+```
+
+both_imp_and_lime_65_0_2_try2 performs best -> suggests that imputting all pH and lime from pH and classes 0-2 are the better appoach. 
