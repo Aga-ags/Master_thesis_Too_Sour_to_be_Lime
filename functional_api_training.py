@@ -7,9 +7,9 @@ os.environ["KERAS_BACKEND"] = "tensorflow"
 np.random.seed(189)
 import tensorflow as tf
 import keras
-from keras import layers
+from keras import Model, Input
 from keras import ops
-from keras.layers import Dropout
+from keras.layers import Dense, Dropout
 import keras_tuner as kt
 import pickle
 
@@ -18,20 +18,24 @@ import pickle
 x_val = pd.read_csv("../data/x_valid.csv").values
 y_val = pd.read_csv("../data/y_valid.csv")
 
+# transform the validation y to dictionary, since that is the format needed for evaluation
+validation_y = {
+    "pH": y_val["pH"].values,
+    "lime": y_val["lime"].values
+    }
+
 # test data
 x_test = pd.read_csv("../data/x_test.csv").values
 y_test = pd.read_csv("../data/y_test.csv")
-
 
 # define dfs to save all results into
 results_validation = y_val
 results_test = y_test
 
 # custom objective for zero - inflation
-
-class CustomMetric(keras.metrics.Metric):
+class zero_inflated_mse(keras.metrics.Metric):
     def __init__(self, **kwargs):
-        # Specify the name of the metric as "custom_metric".
+        # Specify the name of the metric 
         super().__init__(name="zero_inflated_mse", **kwargs)
 
         # stores cumulative sum of squares of true zero samples
@@ -83,64 +87,59 @@ class CustomMetric(keras.metrics.Metric):
         self.sum_gt_zero.assign(0.0)
         self.count_gt_zero.assign(0.0)
 
+# Build the neural network architecture 
+def build_model(hp, outputs, x_train, loss_function, include_dropout):
+    inputs = Input(shape=(x_train.shape[1],), name="input")
+    x = inputs
 
-# Define the model building function
-def build_model(hp, number_outputs, x_train, loss_function, include_dropout):
-    model = keras.Sequential()
-    
-    # Input layer
-    model.add(layers.Input(shape=(x_train.shape[1],)))
     if include_dropout:
-        model.add(Dropout(0.2))
+        x = Dropout(0.2)(x)
 
-    # Tune the number of hidden layers: 1 to 3
-    for i in range(hp.Int("num_layers", 0, 4)):
-        model.add(
-            layers.Dense(
-                units=hp.Choice(f"units_{i}", values=[16, 32, 64, 128]),
-                activation=hp.Choice("activation", values=["relu", "tanh", "elu", "silu"])
-            ))
+    # Add hidden layers
+    for i in range(hp.Int("num_layers", 0, 5)): # hp functions define the search space of parameter tunning
+        x = Dense(
+            units=hp.Choice(f"units_{i}", values=[2, 8, 16, 32, 64, 128]),
+            activation=hp.Choice("activation", values=["relu", "tanh", "elu", "silu"])
+        )(x)
         if include_dropout:
-            model.add(Dropout(0.2))
-    
-    model.add(layers.Dense(
-                units=hp.Choice(f"units_last_hidden_layer", values=[2, 16, 32, 64, 128]),
-                activation=hp.Choice("activation_last_hidden_layer", values=["relu", "tanh", "elu", "silu"])))
-    if include_dropout:
-        model.add(Dropout(0.2))
-        
-    
-    # Output layer for regression
-    model.add(layers.Dense(number_outputs, activation=hp.Choice("activation_last_layer", values=["linear", "relu"])))
-    
-    # Compile the model
+            x = Dropout(0.2)(x)
+
+    # Output layers with names
+    if "pH" in outputs:
+        output_ph = Dense(1, name="pH", activation="linear")(x)
+    if "lime" in outputs:    
+        output_lime = Dense(1, name="lime", activation=hp.Choice("activation_last_layer", values=["linear", "relu"]))(x)
+
+    model = Model(inputs=inputs, outputs={"pH": output_ph, "lime": output_lime})
+
     model.compile(
         optimizer=keras.optimizers.Adam(
             hp.Choice("learning_rate", [1e-2, 1e-3, 1e-4])
         ),
-        loss=loss_function,
-        metrics=["mae", "mse", CustomMetric()]
+        loss=loss_function, #if a dictionary, by default it adds the two 
+        metrics={"pH": ["mae", "mse"], "lime": ["mae", "mse", zero_inflated_mse()]}
     )
-    
+
     return model
 
-# define model training and parameter tuning function
+# define perform model training with parameter tunning
 def perform_moodel_training_with_tuning(imputation_scenario, model_name, include_weigths, include_dropout, list_of_dependent_var, objective, loss_function):
+
+    # load training data 
     x_train = pd.read_csv("../data/x_train_" + imputation_scenario + ".csv").values
     y_train = pd.read_csv("../data/y_train_" + imputation_scenario + ".csv")
 
-    # sample wrights
-    sample_weights = pd.read_csv("../data/sample_weights_" + imputation_scenario + ".csv").values.flatten()
-
-    
-    training_y = y_train[list_of_dependent_var].values
-    validation_y = y_val[list_of_dependent_var].values
+    # transfrom the training y values to dictionaries for evaluation
+    training_y = {
+        "pH": y_train["pH"].values,
+        "lime": y_train["lime"].values
+    }
 
     # Initialize the tuner
-    tuner = kt.RandomSearch(
-        lambda hp: build_model(hp,  number_outputs = len(list_of_dependent_var), x_train = x_train, loss_function = loss_function, include_dropout = include_dropout),
+    tuner = kt.BayesianOptimization(
+        lambda hp: build_model(hp,  outputs = list_of_dependent_var, x_train = x_train, loss_function = loss_function, include_dropout = include_dropout),
         objective = objective, # org val_mae
-        max_trials=100,
+        max_trials=10, # 50?
         executions_per_trial=1,
         directory="keras_tuner_logs",
         project_name = model_name 
@@ -151,14 +150,20 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
         "x": x_train,
         "y": training_y,
         "validation_data": (x_val, validation_y),
-        "epochs": 200,
+        "epochs": 10,
         "batch_size": 32,
         "callbacks":[keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)]
     }
 
     # Add sample_weight only if include_weights is True
     if include_weigths:
-        search_args["sample_weight"] = sample_weights
+        # load sample weights
+        sample_weights = pd.read_csv("../data/sample_weights_" + imputation_scenario + ".csv").values.flatten()
+        # Add them to search arguments
+        search_args["sample_weight"] = {
+        "pH": sample_weights,
+        "lime": sample_weights
+    }
 
     # Call tuner.search with unpacked arguments
     tuner.search(**search_args)
@@ -179,14 +184,10 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
     best_model.save("./tuning_results/"+ model_name + ".keras")
 
     # Evaluate best model on validation data
-    loss, mae, mse, zero_infalted_mse = best_model.evaluate(x_val, validation_y)
-    rmse = np.sqrt(mse)
+    metrics = best_model.evaluate(x_val, validation_y, return_dict=True)
+    print("Best model metrics")
+    print(metrics)
     
-    print(f"Metrics of best model on validation set")
-    print(f"MAE:  {mae:.4f}")
-    print(f"MSE:  {mse:.4f}")
-    print(f"Zero inflated MSE:  {zero_infalted_mse:.4f}")
-
     # save the predicted values for vizualization
     y_pred_val = best_model.predict(x_val)
     y_pred_test = best_model.predict(x_test)
@@ -196,10 +197,10 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
         results_test[model_name] = y_pred_test
 
     elif len(list_of_dependent_var) == 2:
-        results_validation[model_name + ".pH"] = y_pred_val[:, [0]]
-        results_validation[model_name + ".lime"] = y_pred_val[:, [1]]
-        results_test[model_name + ".pH"] = y_pred_test[:, [0]]
-        results_test[model_name + ".lime"] = y_pred_test[:, [1]]
+        results_validation[model_name + ".pH"] = y_pred_val["pH"]
+        results_validation[model_name + ".lime"] = y_pred_val["pH"]
+        results_test[model_name + ".pH"] = y_pred_test["lime"]
+        results_test[model_name + ".lime"] = y_pred_test["lime"]
 
     else:
         print("The output was not saved due to unexpeced number of variables")
@@ -213,43 +214,25 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
     validation_data=(x_val, validation_y),
     epochs=200,
     batch_size=32,
-    sample_weight=sample_weights if include_weigths else None,
-    callbacks=[keras.callbacks.EarlyStopping(monitor= objective , patience=10, restore_best_weights=True)]
+    sample_weight={"pH": sample_weights, "lime": sample_weights} if include_weigths else None,
+    callbacks=[keras.callbacks.EarlyStopping(monitor= 'val_loss' , patience=10, restore_best_weights=True)]
 )
     with open("./tuning_results/" + model_name + "_history.pkl", "wb") as f:
         pickle.dump(history.history, f)
 
-perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65", 
-                                    model_name = "both_imp_and_lime_65",
-                                    include_weigths = True,
-                                    list_of_dependent_var = ["pH", "lime"],
-                                    objective= "val_mse", 
-                                    loss_function = "mse",
+
+perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+                                    model_name = "both_funtional_api_try4",
+                                    include_weigths = False,
+                                    list_of_dependent_var = ["pH","lime"],
+                                    objective=[kt.Objective("val_pH_mse", direction="min"), kt.Objective("val_lime_mse", direction="min")],
+                                    loss_function = {'pH': 'mse', 'lime': "mse"},
                                     include_dropout = True)
 
-# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
-#                                     model_name = "both_imp_and_lime_65_0_2_try3",
-#                                     include_weigths = True,
-#                                     list_of_dependent_var = ["pH","lime"],
-#                                     objective= "val_mse", 
-#                                     loss_function = {'output_1': 'mse', 'output_2': "mse"},
-#                                     include_dropout = True)
 
 
-
-
-# perform_moodel_training_with_tuning(imputation_scenario= "full_imp", 
-#                                     model_name = "both_pH_imp_try2",
-#                                     include_weigths = True,
-#                                     list_of_dependent_var = ["pH","lime"],
-#                                     objective= "val_mse", 
-#                                     loss_function = {'pH': 'mse', 'lime': kt.Objective("val_zero_inflated_mse", direction="min")},
-#                                     include_dropout = True)
-
-
-
-results_validation.to_csv('./tuning_results/predictions_validation_both_try2.csv', index=False)
-results_test.to_csv('./tuning_results/predictions_test_lime_both_try2.csv', index=False)
+results_validation.to_csv('./tuning_results/functional_api_val.csv', index=False)
+results_test.to_csv('./tuning_results/functional_api_test.csv', index=False)
 
 
 
