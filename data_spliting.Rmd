@@ -9,7 +9,7 @@ output: html_document
 
 ```{r libraries}
 library(terra)
-library(dplyr)
+library(tidyverse)
 library(sf)
 library(tableone)
 library(recipes)
@@ -22,18 +22,19 @@ df <- readRDS(file="../data/processed_data.Rda")
 df
 ```
 ## Make sample weights
+
 ```{r}
 df <- df |>
-  mutate(sample_weight = ifelse(pH_origin == "site", 0.7, ifelse(pH_origin == "CaCl2", 1, 0.9)),
-          sample_weight = ifelse(lime_imputed == TRUE, sample_weight-0.1, sample_weight),
-         sample_weight = ifelse(lime_imputed_3_5 == TRUE, sample_weight-0.2, sample_weight))
+  mutate(sample_weight_pH = ifelse(pH_origin == "site", 0.7, ifelse(pH_origin == "CaCl2", 1, 0.9)),
+         sample_weight_lime = ifelse(lime_imputed == TRUE, 0.9, 1),
+         sample_weight_lime = ifelse(lime_imputed_3_5 == TRUE, sample_weight_lime - 0.2, sample_weight_lime)
+  )
 ```
-
 
 ## One code encoding for categorical 
 ```{r}
 recipe_obj <- recipe(~ ., data = df) %>%
-  step_dummy(all_nominal() &!any_of(c("pH_origin", "lime_imputed", "lime_imputed_3_5", "lime_imputed_0_2")), one_hot = TRUE) %>%
+  step_dummy(all_nominal() & !any_of(c("pH_origin", "lime_imputed", "lime_imputed_3_5", "lime_imputed_0_2")), one_hot = TRUE) %>%
   prep()
 
 one_hot_df <- bake(recipe_obj, new_data = NULL)
@@ -191,25 +192,24 @@ ggplot(df, aes(x = lime))+
 
 
 # Save prepared data
-```{r}
-x_train <- train|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y", "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
-  as.matrix()
-y_train <- train|>
-  dplyr::select("pH", "lime")
-
+```{r save_val_test}
 x_valid <- validation|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y", "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
+  dplyr::select(!c("pH", "pH_origin", "x", "y", "sample_weight_pH", "sample_weight_lime", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
   as.matrix()
 y_valid  <- validation|>
   dplyr::select("pH", "lime")
 
 x_test <- test|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y", "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
+  dplyr::select(!c("pH", "pH_origin", "x", "y", "sample_weight_pH", "sample_weight_lime", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
   as.matrix()
 y_test  <- test |>
   dplyr::select("pH", "lime")
 
+write.csv(x_valid,file='../data/prepared_data/x_valid.csv', row.names=FALSE)
+write.csv(y_valid,file='../data/prepared_data/y_valid.csv', row.names=FALSE)
+
+write.csv(x_test,file='../data/prepared_data/x_test.csv', row.names=FALSE)
+write.csv(y_test,file='../data/prepared_data/y_test.csv', row.names=FALSE)
 ```
 
 
@@ -217,166 +217,117 @@ y_test  <- test |>
 train |> count(pH_origin, lime_imputed, sort = TRUE)
 ```
 
-
-
-
-
-```{r}
+```{r save_training_per_imp_scenario}
 # Select training data based on imputation conditions
-x_tain_only_H20 <- train|>
-  filter(lime_imputed == FALSE & pH_origin != "site")|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y",   "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
-  as.matrix()
-y_tain_only_H20 <- train|>
-  filter(lime_imputed == FALSE & pH_origin != "site")|>
-  dplyr::select("pH", "lime")
 
-x_tain_pH_imp <- train|>
-  filter(lime_imputed == FALSE)|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y",   "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
-  as.matrix()
-y_tain_pH_imp<- train|>
-   filter(lime_imputed == FALSE)|>
-  dplyr::select("pH", "lime")
+# Save the covariates of the training data under imputation scenario
+prepare_x <- function(df, filter_expr, file_name) {
+  filtered <- df %>%
+    filter(!!rlang::enquo(filter_expr))
+  
+  x <- filtered %>%
+    select(-c("pH", "pH_origin", "x", "y", "sample_weight_pH", "sample_weight_lime", "lime", 
+              "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5")) %>%
+    as.matrix()
+  write.csv(x, file = paste0('../data/prepared_data/x_train_', file_name, '.csv'), row.names=FALSE )
+  return(x)
+}
 
-x_tain_H20_and_lime_65<- train|>
-  filter(lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site")|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y",   "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
-  as.matrix()
-y_tain_H20_and_lime_65<- train|>
-  filter(lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site")|>
+# Save the outputs of the training data under imputation scenario
+prepare_y <- function(df, filter_expr, file_name) {
+  filtered <- df %>%
+    filter(!!rlang::enquo(filter_expr))
+  
+  y <- filtered %>%
   dplyr::select("pH", "lime")
+  
+  write.csv(y, file = paste0('../data/prepared_data/y_train_', file_name, '.csv'), row.names=FALSE )
+  return(y)
+}
 
-x_tain_pH_imp_and_lime_65<- train|>
-  filter(lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE)|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y",   "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
-  as.matrix()
-y_tain_pH_imp_and_lime_65<- train|>
-  filter(lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE)|>
-  dplyr::select("pH", "lime")
+# save the weights for training data
+prepare_weights <-  function(df, filter_expr, file_name){
+  weights <- df|>
+  filter(!!rlang::enquo(filter_expr))|>
+  dplyr::select("sample_weight_pH", "sample_weight_lime")
+  
+  write.csv(weights,file=paste0('../data/prepared_data/sample_weights_', file_name,'.csv'), row.names=FALSE)
+  return(weights)
+}
+  
 
-x_tain_pH_imp_and_lime_65_0_2<- train|>
-  filter(lime_imputed_3_5 == FALSE)|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y",   "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
-  as.matrix()
-y_tain_pH_imp_and_lime_65_0_2<- train|>
-  filter(lime_imputed_3_5 == FALSE)|>
-  dplyr::select("pH", "lime")
+# Create the imputation scenarios:
+# Everything imputed:
+x_train_full_imp <- prepare_x(train, TRUE, file_name = "full_imp")
+y_train_full_imp <- prepare_y(train, TRUE, file_name = "full_imp")
+weights_full_imp <- prepare_weights(train, TRUE, file_name = "full_imp")
 
-x_tain_only_h2o_ca2cl<- train|>
-  filter( pH_origin != "site")|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y",   "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
-  as.matrix()
-y_tain_only_h2o_ca2cl<- train|>
-  filter(pH_origin != "site")|>
-  dplyr::select("pH", "lime")
 
-x_tain_only_ca2cl<- train|>
-  filter( pH_origin != "site" & pH_origin != "H2O")|>
-  dplyr::select(!c("pH", "pH_origin", "x", "y",   "sample_weight", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
-  as.matrix()
-y_tain_only_ca2cl<- train|>
-  filter(pH_origin != "site" & pH_origin != "H2O")|>
-  dplyr::select("pH", "lime")
+# All lime imputed, different pH imputations (train is fully imputed): 
+x_train_no_site_H2O <- prepare_x(train, pH_origin != "site" & pH_origin != "H2O", file_name = "no_site_H2O")
+y_train_no_site_H2O <- prepare_y(train, pH_origin != "site" & pH_origin != "H2O", file_name = "no_site_H2O")
+weights_no_site_H2O <- prepare_weights(train, pH_origin != "site" & pH_origin != "H2O", file_name = "no_site_H2O")
+
+
+x_train_no_site <- prepare_x(train, pH_origin != "site", file_name = "no_site")
+y_train_no_site <- prepare_y(train, pH_origin != "site", file_name = "no_site")
+weights_no_site <- prepare_weights(train, pH_origin != "site" & pH_origin != "H2O", file_name = "no_site")
+
+# All pH, different lime imputations (train is fully imputed): 
+x_train_no_lime_imputation <- prepare_x(train, lime_imputed == FALSE, file_name = "no_lime_imputation")
+y_train_no_lime_imputation <- prepare_y(train, lime_imputed == FALSE, file_name = "no_lime_imputation")
+weights_no_lime_imputation <- prepare_weights(train, lime_imputed == FALSE, file_name = "no_lime_imputation")
+
+x_train_no_lime_imputation_from_lime_classes <- prepare_x(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_lime_classes")
+y_train_no_lime_imputation_from_lime_classes  <- prepare_y(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_lime_classes")
+weights_no_lime_imputation_from_lime_classes  <- prepare_weights(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_lime_classes")
+
+x_train_no_lime_imputation_from_3_5_classes <- prepare_x(train, lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_lime_classes")
+y_train_no_lime_imputation_from_3_5_classes  <- prepare_y(train, lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_lime_classes")
+weights_no_lime_imputation_from_3_5_classes  <- prepare_weights(train, lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_lime_classes")
+
+# Remaining combinations of some pH and some lime
+
+# no lime imputation & some pH
+x_train_no_imputation <- prepare_x(train, pH_origin != "site" & pH_origin != "H2O" & lime_imputed == FALSE, file_name = "no_imputation")
+y_train_no_imputation <- prepare_y(train, pH_origin != "site" & pH_origin != "H2O" & lime_imputed == FALSE, file_name = "no_imputation")
+weights_no_imputation <- prepare_weights(train, pH_origin != "site" & pH_origin != "H2O" & lime_imputed == FALSE, file_name = "no_imputation")
+
+x_train_no_lime_imputation_site <- prepare_x(train, pH_origin != "site" & lime_imputed == FALSE, file_name = "no_lime_imputation_site")
+y_train_no_lime_imputation_site  <- prepare_y(train, pH_origin != "site" & lime_imputed == FALSE , file_name = "no_lime_imputation_site")
+weights_no_lime_imputation_site  <- prepare_weights(train, pH_origin != "site" & lime_imputed == FALSE, file_name = "no_lime_imputation_site")
+
+# lime from 6.5 and some pH
+x_train_no_lime_imputation_from_lime_classes_H2O_site <- prepare_x(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site" & pH_origin != "H2O", file_name = "no_lime_imputation_from_lime_classes_H2O_site")
+y_train_no_lime_imputation_from_lime_classes_H2O_site   <- prepare_y(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site" & pH_origin != "H2O", file_name = "no_lime_imputation_from_lime_classes_H2O_site")
+weights_no_lime_imputation_from_lime_classes_H2O_site  <- prepare_weights(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site" & pH_origin != "H2O", file_name = "no_lime_imputation_from_lime_classes_H2O_site")
+
+x_train_no_lime_imputation_from_lime_classes_site <- prepare_x(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site", file_name = "no_lime_imputation_from_lime_classes_site")
+y_train_no_lime_imputation_from_lime_classes_site  <- prepare_y(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site", file_name = "no_lime_imputation_from_lime_classes_site")
+weights_no_lime_imputation_from_lime_classes_site  <- prepare_weights(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site", file_name = "no_lime_imputation_from_lime_classes_site")
+
+# lime from 6.5 and 0-2 and some pH
+x_train_no_lime_imputation_from_3_5_classes_H2O_site <- prepare_x(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site" & pH_origin != "H2O", file_name = "no_lime_imputation_from_3_5_classes_H2O_site")
+y_train_no_lime_imputation_from_3_5_classes_H2O_site   <- prepare_y(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site" & pH_origin != "H2O", file_name = "no_lime_imputation_from_3_5_classes_H2O_site")
+weights_no_lime_imputation_from_3_5_classes_H2O_site  <- prepare_weights(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site" & pH_origin != "H2O", file_name = "no_lime_imputation_from_3_5_classes_H2O_site")
+
+x_train_no_lime_imputation_from_3_5_classes_site <- prepare_x(train, lime_imputed_3_5 == FALSE & pH_origin != "site", file_name = "no_lime_imputation_from_3_5_classes_site")
+y_train_no_lime_imputation_from_3_5_classes_site  <- prepare_y(train,lime_imputed_3_5 == FALSE & pH_origin != "site", file_name = "no_lime_imputation_from_3_5_classes_site")
+weights_no_lime_imputation_from_3_5_classes_site  <- prepare_weights(train, lime_imputed_3_5 == FALSE & pH_origin != "site", file_name = "no_lime_imputation_from_3_5_classes_site")
 ```
 
 ```{r}
-nrow(x_train)
-nrow(x_tain_only_H20)
-nrow(x_tain_pH_imp)
-nrow(x_tain_H20_and_lime_65)
-nrow(x_tain_pH_imp_and_lime_65)
-nrow(x_tain_pH_imp_and_lime_65_0_2)
+nrow(x_train_full_imp)
+nrow(x_train_no_site)
+nrow(x_train_no_site_H2O)
+nrow(x_train_no_lime_imputation)
+nrow(x_train_no_lime_imputation_from_lime_classes)
+nrow(x_train_no_lime_imputation_from_3_5_classes)
 ```
 
 
-```{r}
-write.csv(x_train,file='../data/x_train_full_imp.csv', row.names=FALSE)
-write.csv(y_train,file='../data/y_train_full_imp.csv', row.names=FALSE)
-
-write.csv(x_tain_only_H20,file='../data/x_train_only_H20.csv', row.names=FALSE)
-write.csv(y_tain_only_H20,file='../data/y_train_only_H20.csv', row.names=FALSE)
 
 
-write.csv(x_tain_pH_imp,file='../data/x_train_pH_imp.csv', row.names=FALSE)
-write.csv(y_tain_pH_imp,file='../data/y_train_pH_imp.csv', row.names=FALSE)
-
-
-write.csv(x_tain_H20_and_lime_65,file='../data/x_train_H20_and_lime_65.csv', row.names=FALSE)
-write.csv(y_tain_H20_and_lime_65,file='../data/y_train_H20_and_lime_65.csv', row.names=FALSE)
-
-
-write.csv(x_tain_pH_imp_and_lime_65,file='../data/x_train_pH_imp_and_lime_65.csv', row.names=FALSE)
-write.csv(y_tain_pH_imp_and_lime_65,file='../data/y_train_pH_imp_and_lime_65.csv', row.names=FALSE)
-
-
-write.csv(x_tain_pH_imp_and_lime_65_0_2,file='../data/x_train_pH_imp_and_lime_65_0_2.csv', row.names=FALSE)
-write.csv(y_tain_pH_imp_and_lime_65_0_2,file='../data/y_train_pH_imp_and_lime_65_0_2.csv', row.names=FALSE)
-
-write.csv(x_tain_only_h2o_ca2cl,file='../data/x_train_only_h2o_ca2cl_all_lime.csv', row.names=FALSE)
-write.csv(y_tain_only_h2o_ca2cl,file='../data/y_train_only_h2o_ca2cl_all_lime.csv', row.names=FALSE)
-
-write.csv(x_tain_only_ca2cl,file='../data/x_train_only_ca2cl_all_lime.csv', row.names=FALSE)
-write.csv(y_tain_only_ca2cl,file='../data/y_train_only_ca2cl_all_lime.csv', row.names=FALSE)
-
-
-write.csv(x_valid,file='../data/x_valid.csv', row.names=FALSE)
-write.csv(y_valid,file='../data/y_valid.csv', row.names=FALSE)
-
-write.csv(x_test,file='../data/x_test.csv', row.names=FALSE)
-write.csv(y_test,file='../data/y_test.csv', row.names=FALSE)
-```
-
-## Save training weights
-```{r}
-sample_wight_full_imp <- train|>
-  dplyr::select("sample_weight")
-
-write.csv(sample_wight_full_imp,file='../data/sample_weights_full_imp.csv', row.names=FALSE)
-
-
-sample_wight_only_H20 <- train|>
-  filter(lime_imputed == FALSE & pH_origin != "site")|>
-  dplyr::select("sample_weight")
-
-write.csv(sample_wight_only_H20,file='../data/sample_weights_only_H20.csv', row.names=FALSE)
-
-sample_wight_pH_imp <- train|>
-  filter(lime_imputed == FALSE)|>
-  dplyr::select("sample_weight")
-write.csv(sample_wight_pH_imp,file='../data/sample_weights_pH_imp.csv', row.names=FALSE)
-
-
-sample_wight_H20_and_lime_65<- train|>
-  filter(lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site")|>
-  dplyr::select("sample_weight")
-
-write.csv(sample_wight_H20_and_lime_65,file='../data/sample_weights_H20_and_lime_65.csv', row.names=FALSE)
-
-sample_wight_pH_imp_and_lime_65<- train|>
-  filter(lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE)|>
-  dplyr::select("sample_weight")
-
-write.csv(sample_wight_pH_imp_and_lime_65,file='../data/sample_weights_pH_imp_and_lime_65.csv', row.names=FALSE)
-
-sample_wight_pH_imp_and_lime_65_0_2<- train|>
-  filter(lime_imputed_3_5 == FALSE)|>
-  dplyr::select("sample_weight")
-
-write.csv(sample_wight_pH_imp_and_lime_65_0_2,file='../data/sample_weights_pH_imp_and_lime_65_0_2.csv', row.names=FALSE)
-
-sample_wight_only_h2o_ca2cl_all_lime<- train|>
-  filter( pH_origin != "site")|>
-  dplyr::select("sample_weight")
-
-write.csv(sample_wight_only_h2o_ca2cl_all_lime,file='../data/sample_weights_only_h2o_ca2cl_all_lime.csv', row.names=FALSE)
-
-sample_wight_only_ca2cl_all_lime<- train|>
-  filter(pH_origin != "site" & pH_origin != "H2O")|>
-  dplyr::select("sample_weight")
-
-write.csv(sample_wight_only_ca2cl_all_lime,file='../data/sample_weights_only_ca2cl_all_lime.csv', row.names=FALSE)
-```
 
 
 

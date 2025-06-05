@@ -16,12 +16,12 @@ import json
 
 # load data
 # validation
-x_val = pd.read_csv("../data/x_valid.csv").values
-y_val = pd.read_csv("../data/y_valid.csv")
+x_val = pd.read_csv("../data/prepared_data/x_valid.csv").values
+y_val = pd.read_csv("../data/prepared_data/y_valid.csv")
 
 # test data
-x_test = pd.read_csv("../data/x_test.csv").values
-y_test = pd.read_csv("../data/y_test.csv")
+x_test = pd.read_csv("../data/prepared_data/x_test.csv").values
+y_test = pd.read_csv("../data/prepared_data/y_test.csv")
 
 # define dfs to save all results into
 results_validation = y_val
@@ -116,6 +116,8 @@ def build_model(hp, outputs_list, x_train, loss_function, include_dropout):
         output_dict["lime"] = output_lime
         metric_dict["lime"] = ["mae", "mse", zero_inflated_mse()]
 
+    if "pH" in outputs_list & "lime" in outputs_list:
+        combined_outputs = np.concatenate([output_ph, output_lime], name="combined_output")
     # Create the model instance
     model = Model(inputs=inputs, outputs=output_dict)
 
@@ -133,8 +135,8 @@ def build_model(hp, outputs_list, x_train, loss_function, include_dropout):
 def perform_moodel_training_with_tuning(imputation_scenario, model_name, include_weigths, include_dropout, list_of_dependent_var, loss_function, epochs, batch_size):
 
     # load training data 
-    x_train = pd.read_csv("../data/x_train_" + imputation_scenario + ".csv").values
-    y_train = pd.read_csv("../data/y_train_" + imputation_scenario + ".csv")
+    x_train = pd.read_csv("../data/prepared_data/x_train_" + imputation_scenario + ".csv").values
+    y_train = pd.read_csv("../data/prepared_data/y_train_" + imputation_scenario + ".csv")
 
     # transfrom the y values to dictionaries containing only values of predicted variables
     training_y = {key: y_train[key].values for key in list_of_dependent_var}
@@ -163,9 +165,9 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
     # Add sample_weight only if include_weights is True
     if include_weigths:
         # load sample weights
-        sample_weights = pd.read_csv("../data/sample_weights_" + imputation_scenario + ".csv").values.flatten()
+        sample_weights = pd.read_csv("../data/prepared_data/sample_weights_" + imputation_scenario + ".csv")
         # Add them to search arguments
-        sample_weights_dict =  {key: sample_weights for key in list_of_dependent_var}
+        sample_weights_dict = {key: sample_weights["sample_weight_" + key].values for key in list_of_dependent_var}
         search_args["sample_weight"] = sample_weights_dict
     else:
         sample_weights_dict = None
@@ -238,7 +240,7 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
 
 
 
-# perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation", 
 #                                     model_name = "both_funtional_api_try4",
 #                                     include_weigths = False,
 #                                     list_of_dependent_var = ["pH","lime"],
@@ -247,7 +249,7 @@ def perform_moodel_training_with_tuning(imputation_scenario, model_name, include
 #                                     include_dropout = True)
 
 
-perform_moodel_training_with_tuning(imputation_scenario = "pH_imp_and_lime_65_0_2", 
+perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation", 
                                     model_name = "both_funtional_api_try5",
                                     list_of_dependent_var = ["pH"],
                                     loss_function = {'pH': 'mse'},
