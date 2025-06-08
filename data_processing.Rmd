@@ -921,7 +921,7 @@ scaling_params <- data.frame(
 
 # Define the variables to scale
 vars_to_scale <- processed_data %>%
-  dplyr::select(where(is.numeric), -any_of(c("x", "y", "pH", "id"))) %>%
+  dplyr::select(where(is.numeric), -any_of(c("x", "y", "id"))) %>%
   names()
 
 # Scale variables and store mean/sd
