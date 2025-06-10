@@ -271,7 +271,7 @@ weights_no_site_H2O <- prepare_weights(train, pH_origin != "site" & pH_origin !=
 
 x_train_no_site <- prepare_x(train, pH_origin != "site", file_name = "no_site")
 y_train_no_site <- prepare_y(train, pH_origin != "site", file_name = "no_site")
-weights_no_site <- prepare_weights(train, pH_origin != "site" & pH_origin != "H2O", file_name = "no_site")
+weights_no_site <- prepare_weights(train, pH_origin != "site", file_name = "no_site")
 
 # All pH, different lime imputations (train is fully imputed): 
 x_train_no_lime_imputation <- prepare_x(train, lime_imputed == FALSE, file_name = "no_lime_imputation")
@@ -282,9 +282,9 @@ x_train_no_lime_imputation_from_lime_classes <- prepare_x(train, lime_imputed_0_
 y_train_no_lime_imputation_from_lime_classes  <- prepare_y(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_lime_classes")
 weights_no_lime_imputation_from_lime_classes  <- prepare_weights(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_lime_classes")
 
-x_train_no_lime_imputation_from_3_5_classes <- prepare_x(train, lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_lime_classes")
-y_train_no_lime_imputation_from_3_5_classes  <- prepare_y(train, lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_lime_classes")
-weights_no_lime_imputation_from_3_5_classes  <- prepare_weights(train, lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_lime_classes")
+x_train_no_lime_imputation_from_3_5_classes <- prepare_x(train, lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_3_5_classes")
+y_train_no_lime_imputation_from_3_5_classes  <- prepare_y(train, lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_3_5_classes")
+weights_no_lime_imputation_from_3_5_classes  <- prepare_weights(train, lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_3_5_classes")
 
 # Remaining combinations of some pH and some lime
 

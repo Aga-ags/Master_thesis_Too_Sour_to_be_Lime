@@ -19,8 +19,10 @@ pivot_to_pred_model <- function(df){
   df |>
   pivot_longer(
     cols = -c(1:2),
-    names_pattern = "(pH|lime)_(.*)$",
-    names_to = c("predicted", "model"))
+    #names_pattern = "(pH|lime)_(.*)$",
+    #names_to = c("predicted", "model"))
+    names_pattern  =  "^(.*)\\.(pH|lime)$", #final_pH_full_imp.pH
+    names_to = c("model", "predicted"))
 }
 
 plot_observed_against_predicted <- function(df){
@@ -142,23 +144,32 @@ analyze_output <- function(df_long, outcome){
 ```
 
 # Load data
+
+```{r}
+df_both <- read.csv(file="./tuning_results/final_both_validation.csv")
+df_both
+
+df_long_both <- pivot_to_pred_model(df_both)
+df_long_both
+```
+
 ```{r load_pH_base}
 # pH only
-df_pH <- read.csv(file="./tuning_results/predictions_validation_pH.csv")
+df_pH <- read.csv(file="./tuning_results/final_pH_validation.csv")
 df_pH
 
 df_long_pH <- pivot_to_pred_model(df_pH)
 
-df_long_pH$model <- ordered(df_long_pH$model, levels =c("only_H2O", "pH_imp", "H20_and_lime_65", "imp_and_lime_65", "imp_and_lime_65_0_2", "full_imp", "only_h2o_ca2cl_all_lime", "only_ca2cl_all_lime"))
-df_long_pH
+#df_long_pH$model <- ordered(df_long_pH$model, levels =c("only_H2O", "pH_imp", "H20_and_lime_65", "imp_and_lime_65", "imp_and_lime_65_0_2", "full_imp", "only_h2o_ca2cl_all_lime", "only_ca2cl_all_lime"))
+#df_long_pH
 
-df_pH_test <- read.csv(file="./tuning_results/predictions_test_pH.csv")
-df_pH_test
+#df_pH_test <- read.csv(file="./tuning_results/predictions_test_pH.csv")
+#df_pH_test
 
-df_long_pH_test <- pivot_to_pred_model(df_pH_test)
+#df_long_pH_test <- pivot_to_pred_model(df_pH_test)
 
-df_long_pH_test$model <- ordered(df_long_pH_test$model, levels =c("only_H2O", "pH_imp", "H20_and_lime_65", "imp_and_lime_65", "imp_and_lime_65_0_2", "full_imp", "only_h2o_ca2cl_all_lime", "only_ca2cl_all_lime"))
-df_long_pH_test
+#df_long_pH_test$model <- ordered(df_long_pH_test$model, levels =c("only_H2O", "pH_imp", "H20_and_lime_65", "imp_and_lime_65", "imp_and_lime_65_0_2", "full_imp", "only_h2o_ca2cl_all_lime", "only_ca2cl_all_lime"))
+#df_long_pH_test
 ```
 
 ```{r}
@@ -231,6 +242,17 @@ df_regularization_long
 
 
 # Perform data evaluation 
+
+
+```{r}
+analyze_output(df_long_both, outcome = "pH")
+analyze_output(df_long_both, outcome = "lime")
+```
+
+```{r}
+analyze_output(df_long_pH, outcome = "pH")
+```
+
 
 ```{r ph_analysis, fig.width = 10}
 # data evaluation on pH models with weights and dropout: 

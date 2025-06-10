@@ -125,9 +125,9 @@ def build_model(hp, list_of_outputs, x_train, loss_function, include_dropout = T
         x = Dropout(0.2)(x)
 
     # Add hidden layers
-    for i in range(hp.Int("num_layers", 0, 5)): # hp functions define the search space of parameter tunning
+    for i in range(hp.Int("num_layers", 1, 5)): # hp functions define the search space of parameter tunning
         x = Dense(
-            units=hp.Choice(f"units_{i}", values=[2, 8, 16, 32, 64, 128]),
+            units=hp.Choice(f"units_{i}", values=[16, 32, 64, 128]),
             activation=hp.Choice("activation", values=["relu", "tanh", "elu", "silu"])
         )(x)
         if include_dropout:
@@ -196,7 +196,7 @@ def perform_moodel_training_with_tuning(imputation_scenario,
     tuner = kt.BayesianOptimization(
         lambda hp: build_model(hp,  list_of_outputs = list_of_outputs, x_train = x_train, loss_function = loss_function, include_dropout = include_dropout, include_lime_ph_penalty = include_lime_ph_penalty, lambda_penalty = lambda_penalty),
         objective = create_objectives_from_loss(loss_function, list_of_outputs, include_lime_ph_penalty), 
-        max_trials=10, # 50 - change
+        max_trials=50, # 50 - change
         executions_per_trial=1,
         directory="keras_tuner_logs",
         project_name = model_name 
@@ -216,8 +216,12 @@ def perform_moodel_training_with_tuning(imputation_scenario,
     if include_weigths:
         # load sample weights
         sample_weights = pd.read_csv("../data/prepared_data/sample_weights_" + imputation_scenario + ".csv")
-        # Add them to search arguments
+        # restructure them into a dictionary (expected format)
         sample_weights_dict = {key: sample_weights["sample_weight_" + key].values for key in list_of_outputs}
+        # add zero weights for the combined output if penalization for relationship of outputs is applied
+        if "pH" in list_of_outputs and "lime" in list_of_outputs and include_lime_ph_penalty == True: 
+            sample_weights_dict["combined_output"] = np.ones((len(x_train),2)) 
+        # Add them to search arguments
         search_args["sample_weight"] = sample_weights_dict
     else:
         sample_weights_dict = None
@@ -294,48 +298,406 @@ def perform_moodel_training_with_tuning(imputation_scenario,
     plt.close()
 
 
+# pH
+
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp", 
+#                                     model_name = "final_pH_full_imp",
+#                                     list_of_outputs = ["pH"],
+#                                     loss_function = {'pH': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_site", 
+#                                     model_name = "final_pH_no_site",
+#                                     list_of_outputs = ["pH"],
+#                                     loss_function = {'pH': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_site_H2O", 
+#                                     model_name = "final_pH_no_site_H2O",
+#                                     list_of_outputs = ["pH"],
+#                                     loss_function = {'pH': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
 
 
-perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation", 
-                                    model_name = "final_code_try_1",
-                                    list_of_outputs = ["pH","lime"],
-                                    loss_function = {'pH': 'mse', 'lime': "mse"},
-                                    include_weigths = False,
-                                    include_dropout = True,  
-                                    include_lime_ph_penalty = True,   
-                                    lambda_penalty = 0.001,                              
-                                    epochs = 10, 
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp", 
+#                                     model_name = "final_pH_full_imp_no_dropout",
+#                                     list_of_outputs = ["pH"],
+#                                     loss_function = {'pH': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = False,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_site", 
+#                                     model_name = "final_pH_no_site_no_dropout",
+#                                     list_of_outputs = ["pH"],
+#                                     loss_function = {'pH': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = False,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_site_H2O", 
+#                                     model_name = "final_pH_no_site_H2O_no_dropout",
+#                                     list_of_outputs = ["pH"],
+#                                     loss_function = {'pH': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = False,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp", 
+#                                     model_name = "final_pH_full_imp_no_weights",
+#                                     list_of_outputs = ["pH"],
+#                                     loss_function = {'pH': 'mse'},
+#                                     include_weigths = False,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_site", 
+#                                     model_name = "final_pH_no_site_no_weights",
+#                                     list_of_outputs = ["pH"],
+#                                     loss_function = {'pH': 'mse'},
+#                                     include_weigths = False,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_site_H2O", 
+#                                     model_name = "final_pH_no_site_H2O_no_weights",
+#                                     list_of_outputs = ["pH"],
+#                                     loss_function = {'pH': 'mse'},
+#                                     include_weigths = False,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp", 
+#                                     model_name = "final_pH_full_imp_no_weights_no_dropout",
+#                                     list_of_outputs = ["pH"],
+#                                     loss_function = {'pH': 'mse'},
+#                                     include_weigths = False,
+#                                     include_dropout = False,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_site", 
+#                                     model_name = "final_pH_no_site_no_weights_no_dropout",
+#                                     list_of_outputs = ["pH"],
+#                                     loss_function = {'pH': 'mse'},
+#                                     include_weigths = False,
+#                                     include_dropout = False,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_site_H2O", 
+#                                     model_name = "final_pH_no_site_H2O_no_weights_no_dropout",
+#                                     list_of_outputs = ["pH"],
+#                                     loss_function = {'pH': 'mse'},
+#                                     include_weigths = False,
+#                                     include_dropout = False,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+
+
+
+# results_validation.to_csv('./tuning_results/final_pH_validation.csv', index=False)
+# results_test.to_csv('./tuning_results/final_pH_test.csv', index=False)
+
+
+# Lime
+
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp", 
+#                                     model_name = "final_lime_full_imp",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+#                                     model_name = "final_lime_no_lime_imputation_from_3_5_classes",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes", 
+#                                     model_name = "final_pH_no_lime_imputation_from_lime_classes",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation", 
+#                                     model_name = "no_lime_imputation",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp", 
+#                                     model_name = "final_lime_full_imp_no_dropout",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = False,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+#                                     model_name = "final_lime_no_lime_imputation_from_3_5_classes",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = False,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes", 
+#                                     model_name = "final_pH_no_lime_imputation_from_lime_classes",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = False,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation", 
+#                                     model_name = "final_pH_no_lime_imputation",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = False,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp", 
+#                                     model_name = "final_lime_full_imp_no_weights",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = False,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+#                                     model_name = "final_pH_no_lime_imputation_from_3_5_classes_no_weights",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = False,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes", 
+#                                     model_name = "final_pH_no_lime_imputation_from_lime_classes_no_weights",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = False,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation", 
+#                                     model_name = "final_pH_no_lime_imputation_no_weights",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = False,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+
+# perform_moodel_training_with_tuning(imputation_scenario = "full_imp", 
+#                                     model_name = "final_lime_full_imp_no_weights_no_dropout",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = False,
+#                                     include_dropout = False,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+#                                     model_name = "final_lime_no_lime_imputation_from_3_5_classes_no_weights_no_dropout",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = False,
+#                                     include_dropout = False,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes", 
+#                                     model_name = "final_lime_no_lime_imputation_from_lime_classes_no_weights_no_dropout",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = False,
+#                                     include_dropout = False,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation", 
+#                                     model_name = "final_lime_no_lime_imputation_no_weights_no_dropout",
+#                                     list_of_outputs = ["lime"],
+#                                     loss_function = {'lime': 'mse'},
+#                                     include_weigths = False,
+#                                     include_dropout = False,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+
+
+# results_validation.to_csv('./tuning_results/final_lime_validation_with_mse.csv', index=False)
+# results_test.to_csv('./tuning_results/final_lime_test_with_mse.csv', index=False)
+
+
+# both
+
+perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+                                    model_name = "final_both_no_lime_imputation_from_3_5_classes_both_mse",
+                                    list_of_outputs = ["pH", "lime"],
+                                    loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    include_weigths = True,
+                                    include_dropout = True,                              
+                                    epochs = 100, 
                                     batch_size = 32)
 
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+#                                     model_name = "final_both_no_lime_imputation_from_3_5_classes_zero_inflated_mse",
+#                                     list_of_outputs = ["pH", "lime"],
+#                                     loss_function = {'pH': 'mse', 'lime': 'zero_inflated_mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
 
-perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation", 
-                                    model_name = "final_code_try_2",
-                                    list_of_outputs = ["pH"],
-                                    loss_function = {'pH': 'mse'},
-                                    include_weigths = False,
-                                    include_dropout = True,  
-                                    include_lime_ph_penalty = True,   
-                                    lambda_penalty = 0.001,                              
-                                    epochs = 10, 
-                                    batch_size = 32)
+perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+                                    model_name = "final_both_no_lime_imputation_from_3_5_classes_both_mse_relationship_penalty_001",
+                                    list_of_outputs = ["pH", "lime"],
+                                    loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    include_weigths = True,
+                                    include_dropout = True,                              
+                                    epochs = 100, 
+                                    batch_size = 32,
+                                    include_lime_ph_penalty=True,
+                                    lambda_penalty=0.001)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+#                                     model_name = "final_both_no_lime_imputation_from_3_5_classes_zero_inflated_mse_relationship_penalty_001",
+#                                     list_of_outputs = ["pH", "lime"],
+#                                     loss_function = {'pH': 'mse', 'lime': 'zero_inflated_mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32,
+#                                     include_lime_ph_penalty=True,
+#                                     lambda_penalty=0.001)
+
+perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+                                    model_name = "final_both_no_lime_imputation_from_3_5_classes_both_mse_relationship_penalty_01",
+                                    list_of_outputs = ["pH", "lime"],
+                                    loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    include_weigths = True,
+                                    include_dropout = True,                              
+                                    epochs = 100, 
+                                    batch_size = 32,
+                                    include_lime_ph_penalty=True,
+                                    lambda_penalty=0.01)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+#                                     model_name = "final_both_no_lime_imputation_from_3_5_classes_zero_inflated_mse_relationship_penalty_01",
+#                                     list_of_outputs = ["pH", "lime"],
+#                                     loss_function = {'pH': 'mse', 'lime': 'zero_inflated_mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32,
+#                                     include_lime_ph_penalty=True,
+#                                     lambda_penalty=0.01)
+
+perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+                                    model_name = "final_both_no_lime_imputation_from_3_5_classes_both_mse_relationship_penalty_0001",
+                                    list_of_outputs = ["pH", "lime"],
+                                    loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    include_weigths = True,
+                                    include_dropout = True,                              
+                                    epochs = 100, 
+                                    batch_size = 32,
+                                    include_lime_ph_penalty=True,
+                                    lambda_penalty=0.0001)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+#                                     model_name = "final_both_no_lime_imputation_from_3_5_classes_zero_inflated_mse_relationship_penalty_0001",
+#                                     list_of_outputs = ["pH", "lime"],
+#                                     loss_function = {'pH': 'mse', 'lime': 'zero_inflated_mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32,
+#                                     include_lime_ph_penalty=True,
+#                                     lambda_penalty=0.0001)
 
 
-perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation", 
-                                    model_name = "final_code_try_3",
-                                    list_of_outputs = ["lime"],
-                                    loss_function = {'lime': "mse"},
-                                    include_weigths = False,
-                                    include_dropout = True,  
-                                    include_lime_ph_penalty = False,              
-                                    epochs = 10, 
-                                    batch_size = 32)
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes", 
+#                                     model_name = "final_both_no_lime_imputation_from_lime_classes_classes_both_mse",
+#                                     list_of_outputs = ["pH", "lime"],
+#                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes", 
+#                                     model_name = "final_both_no_lime_imputation_from_lime_classes_zero_inflated_mse",
+#                                     list_of_outputs = ["pH", "lime"],
+#                                     loss_function = {'pH': 'mse', 'lime': 'zero_inflated_mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes", 
+#                                     model_name = "final_both_no_lime_imputation_from_lime_classes_both_mse_relationship_penalty",
+#                                     list_of_outputs = ["pH", "lime"],
+#                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32,
+#                                     include_lime_ph_penalty=True,
+#                                     lambda_penalty=0.001)
+
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes", 
+#                                     model_name = "final_both_no_lime_imputation_from_lime_classes_zero_inflated_mse_relationship_penalty",
+#                                     list_of_outputs = ["pH", "lime"],
+#                                     loss_function = {'pH': 'mse', 'lime': 'zero_inflated_mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32,
+#                                     include_lime_ph_penalty=True,
+#                                     lambda_penalty=0.001)
 
 
 
-results_validation.to_csv('./tuning_results/functional_api_val.csv', index=False)
-results_test.to_csv('./tuning_results/functional_api_test.csv', index=False)
-
-
-
-
-
+results_validation.to_csv('./tuning_results/final_both_validation.csv', index=False)
+results_test.to_csv('./tuning_results/final_both_test.csv', index=False)

@@ -38,6 +38,17 @@ df_soil_org <- df_soil_org|>
 ```{r}
 colnames(df_org)
 ```
+```{r}
+# how many samples
+df_soil_org|>
+  dplyr::select(id)|>
+  unique()|>
+  nrow()
+
+df_soil_org|>
+  nrow()
+  
+```
 
 # Initial data processing
 
@@ -951,11 +962,25 @@ print(processed_data)
 write.csv(scaling_params, "scaling_parameters.csv", row.names = FALSE)
 
 ```
+```{r}
+ph_mean <- scaling_params[1,2]
+ph_std <- scaling_params[1,3]
+lime_mean <- scaling_params[3,2]
+lime_std <- scaling_params[3,3]
+
+(6.5 - ph_mean) / ph_std
+(0 - lime_mean) / lime_std
+```
+
 
 ```{r}
-processed_data|>
-  filter(pH_origin == "CaCl2" & lime_imputed == FALSE)
+ggplot(processed_data, aes(x = lime))+
+  geom_histogram()
+
+ggplot(processed_data, aes(x = pH))+
+  geom_histogram()
 ```
+
 
 
 ## Save the data
