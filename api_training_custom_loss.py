@@ -28,64 +28,33 @@ results_validation = y_val
 results_test = y_test
 
 # custom objective for zero - inflation
-class zero_inflated_mse(keras.metrics.Metric):
-    def __init__(self, **kwargs):
-        # Specify the name of the metric 
-        super().__init__(name="zero_inflated_mse", **kwargs)
+def zero_inflated_mse_loss(y_true, y_pred):
+    # Due to standarization lime = 0 is now roughly equal to 0.5062935, which is not a nice intiger to compare to, therefore we set a tolerance level
+    tolerance = 1e-4
+    mask_zero = tf.abs(y_true + 0.5062935) < tolerance # values from -0.0001 to 0.0001 are considered 0
+    mask_gt_zero = y_true > (-0.5062935 + tolerance) # values larger than -0.5063935 are considered larger than 0
 
-        # stores cumulative sum of squares of true zero samples
-        self.sum_zero = self.add_weight(name="sum_zero", initializer="zeros")
-        # stores the number of zero samples
-        self.count_zero = self.add_weight(name="count_zero", initializer="zeros")
-        # stores cumulative sum of squares of samples greater than zero 
-        self.sum_gt_zero = self.add_weight(name="sum_gt_zero", initializer="zeros")
-        self.count_gt_zero = self.add_weight(name="count_gt_zero", initializer="zeros")
+     # MSE for zero values
+    y_true_zero = tf.boolean_mask(y_true, mask_zero)
+    y_pred_zero = tf.boolean_mask(y_pred, mask_zero)
 
-    def update_state(self, y_true, y_pred, sample_weight = None):
-        # Create masks
-        # Masks when standarization is not applied: 
-        # mask_zero = ops.equal(y_true, 0)
-        # mask_gt_zero = ops.greater(y_true, 0)
-        # Due to standarization 0 is now roughly equal to 0.5062935, which is not a nice intiger to compare to, therefore we set a tolerance level
-        tolerance = 1e-4
-        mask_zero = ops.abs(y_true + 0.5062935) < tolerance # values from -0.0001 to 0.0001 are considered 0
-        mask_gt_zero = y_true > (-0.5062935 + tolerance) # values larger than -0.5063935 are considered larger than 0
+    mse_zero = tf.cond(
+        tf.size(y_true_zero) > 0,
+        lambda: tf.reduce_mean(tf.square(y_true_zero - y_pred_zero)),
+        lambda: tf.constant(0.0, dtype=tf.float32)
+    )
 
-        # MSE for zero values
-        y_true_zero = tf.boolean_mask(y_true, mask_zero)
-        y_pred_zero = tf.boolean_mask(y_pred, mask_zero)
-        se_zero = ops.square(y_true_zero - y_pred_zero)
-        self.sum_zero.assign_add(ops.sum(se_zero))
-        self.count_zero.assign_add(ops.cast(ops.shape(se_zero)[0], "float32"))
+    # MSE for values > 0
+    y_true_gt_zero = tf.boolean_mask(y_true, mask_gt_zero)
+    y_pred_gt_zero = tf.boolean_mask(y_pred, mask_gt_zero)
 
-        # MSE for values > 0
-        y_true_gt_zero = tf.boolean_mask(y_true, mask_gt_zero)
-        y_pred_gt_zero = tf.boolean_mask(y_pred, mask_gt_zero)
-        se_gt_zero = ops.square(y_true_gt_zero - y_pred_gt_zero)
-        self.sum_gt_zero.assign_add(ops.sum(se_gt_zero))
-        self.count_gt_zero.assign_add(ops.cast(ops.shape(se_gt_zero)[0], "float32"))
+    mse_gt_zero = tf.cond(
+        tf.size(y_true_gt_zero) > 0,
+        lambda: tf.reduce_mean(tf.square(y_true_gt_zero - y_pred_gt_zero)),
+        lambda: tf.constant(0.0, dtype=tf.float32)
+    )
 
-
-    def result(self):
-        mse_zero = tf.cond(
-            self.count_zero > 0,
-            lambda: self.sum_zero / self.count_zero,
-            lambda: tf.constant(0.0)
-        )
-
-        mse_gt_zero = tf.cond(
-            self.count_gt_zero > 0,
-            lambda: self.sum_gt_zero / self.count_gt_zero,
-            lambda: tf.constant(0.0)
-        )
-
-        return (mse_zero + mse_gt_zero) / 2
-
-    def reset_state(self):
-        self.sum_zero.assign(0.0)
-        self.count_zero.assign(0.0)
-        self.sum_gt_zero.assign(0.0)
-        self.count_gt_zero.assign(0.0)
+    return (mse_zero + mse_gt_zero) / 2.0
 
 def lime_ph_penalty_loss(lambda_penalty=1.0):
     def loss(y_true, y_pred):
@@ -106,9 +75,9 @@ def lime_ph_penalty_loss(lambda_penalty=1.0):
 
 def create_objectives_from_loss(loss_function, list_of_outputs, include_lime_ph_penalty):
     if len(list_of_outputs) == 1: 
-        objectives_list = [kt.Objective(f"val_{loss}", direction="min") for key, loss in loss_function.items()]
+        objectives_list = [kt.Objective(f"val_loss", direction="min")]
     elif len(list_of_outputs) == 2:     
-        objectives_list = [kt.Objective(f"val_{key}_{loss}", direction="min") for key, loss in loss_function.items()]
+        objectives_list = [kt.Objective(f"val_{key}_loss", direction="min") for key, loss in loss_function.items()]
         if include_lime_ph_penalty == True: 
             objectives_list.append(kt.Objective("val_combined_output_loss", direction="min"))
     else: 
@@ -145,7 +114,7 @@ def build_model(hp, list_of_outputs, x_train, loss_function, include_dropout = T
     if "lime" in list_of_outputs:
         output_lime = Dense(1, name="lime", activation=hp.Choice("activation_last_layer", values=["linear", "relu"]))(x)
         output_dict["lime"] = output_lime
-        metric_dict["lime"] = ["mae", "mse", zero_inflated_mse()]
+        metric_dict["lime"] = ["mae", "mse"]
 
     # remove
     if "pH" in list_of_outputs and "lime" in list_of_outputs and include_lime_ph_penalty == True: 
@@ -196,7 +165,7 @@ def perform_moodel_training_with_tuning(imputation_scenario,
     tuner = kt.BayesianOptimization(
         lambda hp: build_model(hp,  list_of_outputs = list_of_outputs, x_train = x_train, loss_function = loss_function, include_dropout = include_dropout, include_lime_ph_penalty = include_lime_ph_penalty, lambda_penalty = lambda_penalty),
         objective = create_objectives_from_loss(loss_function, list_of_outputs, include_lime_ph_penalty), 
-        max_trials=50, # 50 - change
+        max_trials=10, # 50 - change
         executions_per_trial=1,
         directory="keras_tuner_logs",
         project_name = model_name 
@@ -259,8 +228,8 @@ def perform_moodel_training_with_tuning(imputation_scenario,
 
     if len(list_of_outputs) == 1:
         output_name = list_of_outputs[0]
-        results_validation[f"{model_name}.{output_name}"] = y_pred_val
-        results_test[f"{model_name}.{output_name}"] = y_pred_test
+        results_validation[f"{model_name}.{output_name}"] = list(y_pred_val.values())[0]
+        results_test[f"{model_name}.{output_name}"] = list(y_pred_test.values())[0]
 
     elif len(list_of_outputs) == 2:
         results_validation[model_name + ".pH"] = y_pred_val["pH"]
@@ -572,14 +541,14 @@ def perform_moodel_training_with_tuning(imputation_scenario,
 
 # both
 
-perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
-                                    model_name = "final_both_no_lime_imputation_from_3_5_classes_both_mse",
-                                    list_of_outputs = ["pH", "lime"],
-                                    loss_function = {'pH': 'mse', 'lime': 'mse'},
-                                    include_weigths = True,
-                                    include_dropout = True,                              
-                                    epochs = 100, 
-                                    batch_size = 32)
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+#                                     model_name = "final_both_no_lime_imputation_from_3_5_classes_both_mse",
+#                                     list_of_outputs = ["pH", "lime"],
+#                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32)
 
 # perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
 #                                     model_name = "final_both_no_lime_imputation_from_3_5_classes_zero_inflated_mse",
@@ -590,16 +559,16 @@ perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_fr
 #                                     epochs = 100, 
 #                                     batch_size = 32)
 
-perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
-                                    model_name = "final_both_no_lime_imputation_from_3_5_classes_both_mse_relationship_penalty_001",
-                                    list_of_outputs = ["pH", "lime"],
-                                    loss_function = {'pH': 'mse', 'lime': 'mse'},
-                                    include_weigths = True,
-                                    include_dropout = True,                              
-                                    epochs = 100, 
-                                    batch_size = 32,
-                                    include_lime_ph_penalty=True,
-                                    lambda_penalty=0.001)
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+#                                     model_name = "final_both_no_lime_imputation_from_3_5_classes_both_mse_relationship_penalty_001",
+#                                     list_of_outputs = ["pH", "lime"],
+#                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32,
+#                                     include_lime_ph_penalty=True,
+#                                     lambda_penalty=0.001)
 
 # perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
 #                                     model_name = "final_both_no_lime_imputation_from_3_5_classes_zero_inflated_mse_relationship_penalty_001",
@@ -612,16 +581,16 @@ perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_fr
 #                                     include_lime_ph_penalty=True,
 #                                     lambda_penalty=0.001)
 
-perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
-                                    model_name = "final_both_no_lime_imputation_from_3_5_classes_both_mse_relationship_penalty_01",
-                                    list_of_outputs = ["pH", "lime"],
-                                    loss_function = {'pH': 'mse', 'lime': 'mse'},
-                                    include_weigths = True,
-                                    include_dropout = True,                              
-                                    epochs = 100, 
-                                    batch_size = 32,
-                                    include_lime_ph_penalty=True,
-                                    lambda_penalty=0.01)
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+#                                     model_name = "final_both_no_lime_imputation_from_3_5_classes_both_mse_relationship_penalty_01",
+#                                     list_of_outputs = ["pH", "lime"],
+#                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32,
+#                                     include_lime_ph_penalty=True,
+#                                     lambda_penalty=0.01)
 
 # perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
 #                                     model_name = "final_both_no_lime_imputation_from_3_5_classes_zero_inflated_mse_relationship_penalty_01",
@@ -634,16 +603,16 @@ perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_fr
 #                                     include_lime_ph_penalty=True,
 #                                     lambda_penalty=0.01)
 
-perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
-                                    model_name = "final_both_no_lime_imputation_from_3_5_classes_both_mse_relationship_penalty_0001",
-                                    list_of_outputs = ["pH", "lime"],
-                                    loss_function = {'pH': 'mse', 'lime': 'mse'},
-                                    include_weigths = True,
-                                    include_dropout = True,                              
-                                    epochs = 100, 
-                                    batch_size = 32,
-                                    include_lime_ph_penalty=True,
-                                    lambda_penalty=0.0001)
+# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+#                                     model_name = "final_both_no_lime_imputation_from_3_5_classes_both_mse_relationship_penalty_0001",
+#                                     list_of_outputs = ["pH", "lime"],
+#                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+#                                     include_weigths = True,
+#                                     include_dropout = True,                              
+#                                     epochs = 100, 
+#                                     batch_size = 32,
+#                                     include_lime_ph_penalty=True,
+#                                     lambda_penalty=0.0001)
 
 # perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
 #                                     model_name = "final_both_no_lime_imputation_from_3_5_classes_zero_inflated_mse_relationship_penalty_0001",
@@ -699,5 +668,5 @@ perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_fr
 
 
 
-results_validation.to_csv('./tuning_results/final_both_validation.csv', index=False)
-results_test.to_csv('./tuning_results/final_both_test.csv', index=False)
+# results_validation.to_csv('./tuning_results/final_both_validation.csv', index=False)
+# results_test.to_csv('./tuning_results/final_both_test.csv', index=False)

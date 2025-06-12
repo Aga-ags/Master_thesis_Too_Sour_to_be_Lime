@@ -25,6 +25,8 @@ df_org <- read_csv("../data/ZH_nabodat_dataset_v1.0.csv")|>
          ausgangsinfo_horizontbezeichnung = as.factor(ausgangsinfo_horizontbezeichnung),
          erhebungsart = as.factor(erhebungsart),
          anonymisierung = as.factor(anonymisierung))
+df_org
+
 df_soil_org<-df_org
 # rename the columns to english names:
 colnames(df_soil_org) <- c("id", "canton", "x", "y", "anonymization", "recording_date", "survey_number", "survey_date", "survey_type","profile_id", "horizon_number", "depth_from_cm", "depth_to_cm", "horizon_name", "initial_info_horizon_name", "humus_content_percent", "clay_percent", "silt_percent", "sand_percent",  "gravel_volume_percent", "stones_volume_percent", "lime_site", "pH_brightness", "fine_grain_size", "clay_from_initial_info_proc", "clay_to_initial_info_proc", "silt_from_initial_info_proc", "silt_to_initial_info_proc", "sand_from_initial_info_proc", "sand_to_initial_info_proc",
@@ -999,6 +1001,39 @@ write.csv(complete_df,file='../data/processed_data.csv', row.names=FALSE)
 saveRDS(complete_df, file="../data/processed_data.Rda")
 saveRDS(df_soil_arable, file="../data/arable_samples_all.Rda")
 ```
+
+
+# Create vectors of datapoints for maps:
+
+```{r all_available_points}
+# Extract all points in arable land that were available for analysis, will be colored by if they ended up in the final data
+
+# Extract which locations are included in the analysis from final dataframe
+locations_of_points_in_analysis <- complete_df |>
+  dplyr::select(x,y)|>
+  distinct()
+locations_of_points_in_analysis$in_analysis <- 1
+
+  complete_df|>
+  distinct(x, y)|>
+  nrow()
+
+# Find which of the original data are included in the analysis:
+all_arable_points_with_inclusion_variable <- df_soil_org |>
+  dplyr::select(x, y, horizon_number)|>
+  left_join(y = locations_of_points_in_analysis, by = c("x", "y"))|>
+  filter(horizon_number == 1)|>
+  mutate(in_analysis = ifelse(is.na(in_analysis), 0, in_analysis))
+
+# Convert the dataframe to sf object
+crs <- "epsg:2056"
+all_arable_points_with_inclusion_variable_sf <- st_as_sf(x = all_arable_points_with_inclusion_variable,                         
+           coords = c("x", "y"),
+           crs = crs)
+# Save the sf object as shapefile
+st_write(all_arable_points_with_inclusion_variable_sf, "../data/all_arable_points_with_inclusion_variable.shp", append=FALSE)
+```
+
 
 
 
