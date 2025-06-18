@@ -21,6 +21,13 @@ set.seed(114)
 df <- readRDS(file="../data/processed_data.Rda")
 df
 ```
+```{r}
+  df|>
+  distinct(x, y)|>
+  nrow()
+```
+
+
 ## Make sample weights
 
 ```{r}
@@ -120,7 +127,10 @@ df_all_samples_arable <- readRDS(file="../data/arable_samples_all.Rda")|>
 test_sf <- st_as_sf(test, coords = c("x", "y"), crs = 2056)  
 train_sf <- st_as_sf(train, coords = c("x", "y"), crs = 2056)
 validation_sf <- st_as_sf(validation, coords = c("x", "y"), crs = 2056)
+
 df_sf <- st_as_sf(df, coords = c("x", "y"), crs = 2056)
+# Save the sf object as shapefile
+st_write(df_sf, "../data/data_with_training_test_split.shp", append=FALSE)
 
 plot(st_geometry(df_all_samples_arable), col = 'grey', main = "Data splits spatial distribution")
 plot(st_geometry(train_sf), col = 'blue', add = TRUE)

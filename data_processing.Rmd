@@ -9,12 +9,14 @@ output: html_document
 # Libararies
 ```{r}
 library(mice)
+library(ggmice)
 library(fitdistrplus) # fitting gamma distribution
 library(tidyverse)
 library(purrr)
 library(terra)
 library(sf)
 library(obliquer)
+library(RColorBrewer) # pretty colours graphs
 set.seed(142)
 ```
 # Loading data
@@ -71,7 +73,7 @@ df_soil_org %>%
 ```
 
 
-
+## Remove annonymized points
 ```{r}
 # ploting where annonymized points are located 
 df <- df_soil_org
@@ -182,10 +184,19 @@ length(unique(df_soil_selected[["id"]]))
 
 ```{r}
 # plotting patterns of missingness in the pH values
-md.pattern(df_soil_selected, rotate.names = TRUE)
+plot_pattern(df_soil_selected, rotate = TRUE)
+
+# Visualization for the paper
+df_soil_selected|>
+  rename(pH_site  = pH_brightness)|>
+   dplyr::select(`pH-CaCl2`,`pH-H2O`, pH_site)|>
+  plot_pattern(rotate = TRUE)
 
 df_soil_selected|>
-  md.pattern(rotate.names = TRUE)
+  rename(pH_site  = pH_brightness)|>
+   dplyr::select(lime, lime_site)|>
+  plot_pattern(rotate = TRUE)
+
 ```
 
 
@@ -193,7 +204,17 @@ df_soil_selected|>
 # from the original dataframe (with annonymized points) we can see that the relationships between site pH and CaCl2 is quite 1:1, with a small number of outliers.
 ggplot(data = df_soil_org, aes(x = `pH-CaCl2`, y = pH_brightness))+
   geom_point()+
-  geom_abline(slope = 1, intercept = 0)
+  geom_abline(slope = 1, intercept = 0)+
+  theme_minimal()+
+  labs(x ="pH CaCl2", y = "site pH")
+  
+ggsave(file = "../Figures/site_lab_relationship_plot.pdf")
+
+# Finding just how many points have been plotted
+df_soil_org|>
+  dplyr::select(`pH-CaCl2`, pH_brightness)|>
+  filter((!is.na(`pH-CaCl2`)) & (!is.na(`pH_brightness`)))|>
+  nrow()
 ```
 
 
@@ -225,12 +246,12 @@ df_soil_selected_pH_conv <- df_soil_selected|>
 
 df_soil_selected_pH_conv|>
   dplyr::select(where(~ anyNA(.))) |>
-  md.pattern(rotate.names = TRUE)
+  plot_pattern(rotate = TRUE)
 
 df_soil_selected_pH_conv|>
   dplyr::select(where(~ anyNA(.))) |>
   dplyr::select("pH_CaCl2_imputed", "lime", "lime_site")|>
-  md.pattern(rotate.names = TRUE)
+  plot_pattern(rotate = TRUE)
 ```
 Extra 1249 pH measurements, to a total of 6879. In terms of sites that translates to: 
 
@@ -275,12 +296,12 @@ df_soil_selected_pH_conv|>
   dplyr::select(where(~ anyNA(.))) |>
   dplyr::select("pH_CaCl2_imputed", "lime", "lime_site")|>
   filter(pH_CaCl2_imputed >=6)|>
-  md.pattern(rotate.names = TRUE)
+  plot_pattern(rotate = TRUE)
 df_soil_selected_pH_conv|>
   dplyr::select(where(~ anyNA(.))) |>
   dplyr::select("pH_CaCl2_imputed", "lime", "lime_site")|>
   filter(pH_CaCl2_imputed >=6.5)|>
-  md.pattern(rotate.names = TRUE)
+  plot_pattern(rotate = TRUE)
 ```
 # pH and lime relationships in entire Switzerland 
 ```{r}
@@ -329,17 +350,41 @@ ggplot(df_swiss, aes(x = pH_CaCl2_imputed, fill = pH_origin))+
 ```{r vizualize_lime_pH_in_Switzerland}
 # lab lime and pH
 df_swiss|>
-  ggplot(aes(x = pH_CaCl2_imputed, y = lime, colour = pH_origin, alpha = 0.5))+
-  geom_point()+
+  ggplot(aes(x = pH_CaCl2_imputed, y = lime, colour = pH_origin))+
+  geom_point(alpha = 0.2)+
   geom_vline(xintercept = 6.5)+
-  geom_vline(xintercept = 6)
+  geom_vline(xintercept = 6)+
+  theme_minimal()+
+  labs(x ="Imputed pH", y = "Laboratory lime content", colour = "Origin of pH value")+
+  annotate("text", x = 6.15, y = 110, label = "6") +
+  annotate("text", x = 6.8, y = 110, label = "6.5")
 
+ggsave(file = "../Figures/lime_ph_switzerland_relationship_plot.pdf")
+
+
+```
+```{r vizualize_lime_pH_in_Switzerland_2}
+# Observed relationship between lime classes and lab lime
+
+df_swiss|>
+  filter(!is.na(lime_site))|>
+  ggplot(aes(y = lime, x = lime_site))+
+  geom_boxplot()+
+  theme_minimal()+
+  labs(x ="Site lime classification", y = "Laboratory lime content")
+
+ggsave(file = "../Figures/lime_site_lab_lime_switzerland_histograms.pdf")
+
+```
+
+```{r vizualize_lime_pH_in_Switzerland_3}
 df_swiss|>
   ggplot(aes(x = pH_CaCl2_imputed, y = lime))+
   geom_bin2d(bins = 70) +
   geom_vline(xintercept = 6.5)+
   geom_vline(xintercept = 6)+
-  scale_fill_continuous(type = "viridis")
+  scale_fill_continuous(type = "viridis")+
+  theme_minimal()
 
 df_swiss|>
   filter(pH_CaCl2_imputed < 6.5)|>
@@ -353,16 +398,12 @@ df_swiss|>
   geom_boxplot()+
   ggtitle("Distribution of lime for pH below 6.5")
 
-# lime classes and pH and lab lime
+# lime classes and pH
 
 df_swiss|>
   ggplot(aes(y = pH_CaCl2_imputed, x = lime_site))+
   geom_boxplot()+
   geom_hline(yintercept = 6.5)
-
-df_swiss|>
-  ggplot(aes(y = lime, x = lime_site))+
-  geom_boxplot()
 
 # distribution of lime
 df_swiss|>
@@ -372,7 +413,6 @@ df_swiss|>
   facet_wrap(vars(lime_site))
 
 ```
-
 
 
 ```{r remove_outliers}
@@ -400,7 +440,7 @@ df_soil_selected_pH_conv|>
   ggplot(aes(x = lime))+
   geom_histogram()
 
-# impute lime
+# impute lime from pH and classes 0-2
 df_soil_selected_pH_conv <- df_soil_selected_pH_conv|>
   mutate(
     # this indication of whether lime is imputed is okey, because all values that will stay NA will be removed later on
@@ -440,7 +480,6 @@ df_soil_selected_pH_conv <- df_soil_selected_pH_conv|>
                                       sample(df_lime_5$lime, size = length_impute_class_5, replace = TRUE),
                                       lime))))
                                   
-
 # post visualization: 
 
 df_soil_selected_pH_conv|>
@@ -451,9 +490,10 @@ df_soil_selected_pH_conv|>
   ggplot(aes(x = lime, fill = lime_imputed))+
   geom_histogram()
 
+# The missingness of pH and lime post imputation
 df_soil_selected_pH_conv|>
   dplyr::select("pH_CaCl2_imputed", "lime", "lime_site", "lime_imputed")|>
-  md.pattern(rotate.names = TRUE)
+  plot_pattern(rotate = TRUE)
 
 ```
 
@@ -467,6 +507,34 @@ df_soil_selected_pH_conv <- df_soil_selected_pH_conv|>
 df_soil_selected_pH_conv
 ```
 
+```{r quantify_imp_lime}
+# Quantify how much of each imputation occurred
+
+print("Number of horizons imputed from pH < 6.5:")
+df_soil_selected_pH_conv|> 
+  filter(lime_imputed == TRUE & lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE)|>
+  nrow()
+
+print("Number of horizons imputed from lime class 0-2:")
+df_soil_selected_pH_conv|> 
+  filter(lime_imputed_0_2 == TRUE )|>
+  nrow()
+
+print("Number of horizons imputed from lime class 3-5:")
+df_soil_selected_pH_conv|> 
+  filter(lime_imputed_3_5 == TRUE)|>
+  nrow()
+
+print("Number of horizons with oberved lime")
+
+df_soil_selected_pH_conv|> 
+  filter(!is.na(lime))|>
+  nrow()
+
+df_soil_selected_pH_conv|> 
+  filter(!is.na(lime) & lime_imputed== FALSE)|>
+  nrow()
+```
 
 
 ```{r}
@@ -520,7 +588,7 @@ missing_ph_df|>
 ```
 So, U only does site pH, while P H20 and site. 
 
-# Ploting lime
+# Ploting lime (all)
 ```{r}
 
 ggplot(missing_ph_df, aes(x = recording_year, y = lime))+ 
@@ -530,7 +598,7 @@ ggplot(missing_ph_df, aes(x = lime))+
   geom_histogram()
 ```
 
-# Ploting pH 
+# Ploting pH (all)
 ```{r}
 
 ggplot(missing_ph_df, aes(x = recording_year, y = pH_CaCl2_imputed))+ 
@@ -540,7 +608,7 @@ ggplot(missing_ph_df, aes(x = pH_CaCl2_imputed))+
   geom_histogram()
 ```
 
-# spatial distribution of pH and pH missingness
+# spatial distribution of pH and pH missingness (all pH)
 ```{r}
 
 df_sf <- st_as_sf(missing_ph_df, coords = c("x", "y"), crs = 2056)  
@@ -561,17 +629,43 @@ ggplot() +
 
 # Select relevant soil variables
 ```{r}
+# save current format for sf figures (an the end of this script)
+df_map <- df_soil_selected_pH_conv
+df_map
+
 # removing other pH's
 df_soil_selected_pH_conv <- df_soil_selected_pH_conv%>%
   dplyr::select(!c("pH-H2O", "pH-CaCl2", "pH_brightness", "horizon_number", "survey_type"))
 
-# removing still missing pH sites
+# removing still missing pH and lime sites
 df_soil_selected_pH_conv <- df_soil_selected_pH_conv%>%
-  filter(!is.na(pH_CaCl2_imputed))|>
+  filter(!is.na(pH_CaCl2_imputed) & !is.na(lime))|>
   rename(pH = pH_CaCl2_imputed)
 
 df_soil_selected_pH_conv
 length(unique(df_soil_selected_pH_conv[["id"]])) 
+```
+
+```{r plotting_ditribution_final_outputs}
+df_lime_dist <- df_soil_selected_pH_conv|>
+  mutate(lime_origin = ifelse(lime_imputed_3_5 == TRUE, "Classes 3-5",
+         ifelse(lime_imputed_0_2 == TRUE, "Classes 0-2",
+                ifelse(lime_imputed_3_5 == FALSE & lime_imputed_0_2 == FALSE & lime_imputed == FALSE, "Laboratory lime content", "pH <6.5"))))
+
+df_lime_dist$lime_origin<-ordered(df_lime_dist$lime_origin, levels =c("Laboratory lime content", "pH <6.5", "Classes 0-2", "Classes 3-5"))
+
+  ggplot(df_lime_dist, aes(x = lime, fill = lime_origin))+ 
+  geom_histogram(bins = 30)+
+  theme_minimal()+
+  labs(x = "Lime content", y = "Count",  fill = "Origin of lime value")+
+    scale_fill_brewer(palette = "Dark2")
+ggsave(file = "../Figures/distribution_lime.pdf")
+
+ggplot(df_soil_selected_pH_conv, aes(x = pH, fill = pH_origin))+ 
+  geom_histogram()+
+  theme_minimal()+
+  labs(x = "pH", y = "Count", fill = "Origin of pH value") 
+ggsave(file = "../Figures/distribution_pH.pdf")
 ```
 
 
@@ -637,15 +731,40 @@ df_soil_with_cov
 
 ## Missing data in covariates
 
-```{r}
+
+```{r quantifing_missing_covariates}
 df_soil_with_cov %>%
   dplyr::select(where(~ anyNA(.))) %>%
   dplyr::select(! contains("pH")) %>%
   md.pattern(plot = TRUE, rotate.names = TRUE )
+
+# How many locations are missing each covariate
+df_soil_with_cov|>
+  filter(is.na(drainfor))|>
+  distinct(x, y)|>
+  nrow()
+
+df_soil_with_cov|>
+  filter(is.na(feucht_wild))|>
+  distinct(x, y)|>
+  nrow()
+
+df_soil_with_cov|>
+  filter(is.na(bedgwleiter))|>
+  distinct(x, y)|>
+  nrow()
+
+df_soil_with_cov|>
+  filter(is.na(gwleiter))|>
+  distinct(x, y)|>
+  nrow()
+
+df_soil_with_cov|>
+  filter(is.na(skfeucht))|>
+  distinct(x, y)|>
+  nrow()
 ```
 There is missingness among 5 covariates:  drainfor, feucht_wild, bedgwleiter, gwleiter, skfeucht. - the last 3 are maps that should be complete? Open maps, see what happens. Most liekly can be imputed if we find why is it missing - maybe nearest neighbor can work. 
-
-
 
 ```{r}
 cov_missing_sf <- df_soil_with_cov|>
@@ -860,16 +979,6 @@ ggplot(correlations, aes(x = reorder(variable, correlation), y = correlation)) +
 ```
 
 
-
-## Spatial distribution plots 
-
-
-Clear spatial trends in where ph is missing and where ph is low/high. 
-
-## Study area - size
-
-
-
 ## Add oblique geographic coordinates
 
 Used source to cite: https://github.com/anbm-dk/obliquer/blob/main/README.md 
@@ -964,11 +1073,17 @@ print(processed_data)
 write.csv(scaling_params, "scaling_parameters.csv", row.names = FALSE)
 
 ```
+
 ```{r}
-ph_mean <- scaling_params[1,2]
-ph_std <- scaling_params[1,3]
-lime_mean <- scaling_params[3,2]
-lime_std <- scaling_params[3,3]
+ph_mean <- scaling_parameters$mean[scaling_parameters$variable=="pH"]
+ph_std <- scaling_parameters$sd[scaling_parameters$variable=="pH"]
+lime_mean <- scaling_parameters$mean[scaling_parameters$variable=="lime"]
+lime_std <- scaling_parameters$sd[scaling_parameters$variable=="lime"]
+
+ph_mean
+ph_std
+lime_mean
+lime_std
 
 (6.5 - ph_mean) / ph_std
 (0 - lime_mean) / lime_std
@@ -984,16 +1099,11 @@ ggplot(processed_data, aes(x = pH))+
 ```
 
 
-
 ## Save the data
 ```{r}
 complete_df <- processed_data[complete.cases(processed_data), ]
 colnames(complete_df)
 complete_df
-```
-```{r}
-complete_df|>
-  filter(pH_origin == "CaCl2" & lime_imputed == FALSE)
 ```
 
 ```{r}
@@ -1001,6 +1111,68 @@ write.csv(complete_df,file='../data/processed_data.csv', row.names=FALSE)
 saveRDS(complete_df, file="../data/processed_data.Rda")
 saveRDS(df_soil_arable, file="../data/arable_samples_all.Rda")
 ```
+
+
+# Create a table of imputation scenarios
+```{r}
+print("No lime imp | No pH imp | ph h20 | ph site")
+
+complete_df|>
+  filter(lime_imputed== FALSE & pH_origin == "CaCl2")|>
+  nrow()
+complete_df|>
+  filter(lime_imputed== FALSE & pH_origin %in% c("CaCl2", "H2O"))|>
+  nrow()
+complete_df|>
+  filter(lime_imputed== FALSE)|>
+  nrow()
+
+print("Lime from pH <6.5 | No pH imp | ph h20 | ph site")
+complete_df|>
+  filter(lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE) |>
+  filter(pH_origin == "CaCl2")|>
+  nrow()
+
+complete_df|>
+  filter(lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE) |>
+  filter(pH_origin %in% c("CaCl2", "H2O"))|>
+  nrow()
+
+complete_df|>
+  filter(lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE) |>
+  nrow()
+
+print("Lime from 0-2 | No pH imp | ph h20 | ph site")
+
+complete_df|>
+  filter(lime_imputed_3_5 == FALSE) |>
+  filter(pH_origin == "CaCl2")|>
+  nrow()
+
+complete_df|>
+  filter(lime_imputed_3_5 == FALSE) |>
+  filter(pH_origin %in% c("CaCl2", "H2O"))|>
+  nrow()
+
+complete_df|>
+  filter(lime_imputed_3_5 == FALSE) |>
+  nrow()
+
+print("Lime from 3-5 | No pH imp | ph h20 | ph site")
+
+complete_df|>
+  filter(pH_origin == "CaCl2")|>
+  nrow()
+
+complete_df|>
+  filter(pH_origin %in% c("CaCl2", "H2O"))|>
+  nrow()
+
+complete_df|>
+  nrow()
+
+```
+
 
 
 # Create vectors of datapoints for maps:
@@ -1034,6 +1206,26 @@ all_arable_points_with_inclusion_variable_sf <- st_as_sf(x = all_arable_points_w
 st_write(all_arable_points_with_inclusion_variable_sf, "../data/all_arable_points_with_inclusion_variable.shp", append=FALSE)
 ```
 
+```{r sf_distribution_of_lime_and_pH}
+# Extract all points in arable land that were available for analysis with imputed pH and lime, will be shaped by origin of the values
+df_map2 <- df_map |>
+  mutate(lime_origin = ifelse(lime_imputed == FALSE, 0,
+                              ifelse(lime_imputed_0_2 == TRUE, 2,
+                                     ifelse(lime_imputed_3_5 == TRUE, 3,1))))|>
+  dplyr::select(x,y, horizon_number, lime, pH_CaCl2_imputed, pH_origin, lime_origin)|>
+  filter(horizon_number == 1)
 
+df_map2<- df_map2[complete.cases(df_map2), ]
+df_map2
+
+# Convert the dataframe to sf object
+crs <- "epsg:2056"
+df_map2 <- st_as_sf(x = df_map2,                         
+           coords = c("x", "y"),
+           crs = crs)
+# Save the sf object as shapefile
+st_write(df_map2, "../data/pH_lime_horizon_1_points.shp", append=FALSE)
+
+```
 
 
