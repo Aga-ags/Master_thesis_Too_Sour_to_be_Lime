@@ -8,6 +8,7 @@ np.random.seed(189)
 import tensorflow as tf
 import keras
 from keras import Model, Input, regularizers
+from keras.models import load_model
 from keras.layers import Dense, Dropout, Concatenate
 import matplotlib.pyplot as plt
 import keras_tuner as kt
@@ -85,30 +86,37 @@ def create_objectives_from_loss(loss_function, list_of_outputs, include_lime_ph_
     return objectives_list
 
 # Build the neural network architecture 
-def build_model(hp, list_of_outputs, x_train, loss_function, include_dropout = False, include_lime_ph_penalty = False, lambda_penalty = 0.001, reg = None):
+def build_model(hp, list_of_outputs, x_train, loss_function, include_dropout = False, include_lime_ph_penalty = False, lambda_penalty = 0.001, include_reg = False):
     inputs = Input(shape=(x_train.shape[1],), name="input")
     x = inputs
 
+    # Set up regularizer once if using regularization
+    if include_reg:
+        reg_type = hp.Choice("regularization_type", ["l1", "l2", "l1_l2"])
+        reg_strength = hp.Choice("reg_strength", [1e-4, 1e-3, 1e-2])
+        if reg_type == "l1":
+            kernel_regularizer = regularizers.l1(reg_strength)
+        elif reg_type == "l2":
+            kernel_regularizer = regularizers.l2(reg_strength)
+        else:
+            kernel_regularizer = regularizers.l1_l2(l1=reg_strength, l2=reg_strength)
+    else:
+        kernel_regularizer = None
+
+    # set dropout strength
     if include_dropout:
-        x = Dropout(0.2)(x)
+        dropout_strength = hp.Choice("dropout_strength", [0.2, 0.3, 0.4, 0.5])
 
-    # Add hidden layers
-    for i in range(hp.Int("num_layers", 1, 5)): # hp functions define the search space of parameter tunning
-        dense_kwargs = {
-        "units": hp.Choice(f"units_{i}", values=[16, 32, 64, 128]),
-        "activation": hp.Choice("activation", values=["relu", "tanh", "elu", "silu"])
-        }
+    # Activation can be consistent across layers (or randomized per layer if you prefer)
+    activation = hp.Choice("activation", values=["relu", "tanh", "elu", "silu"])
 
-        # Add regularizer only if it's not None
-        if reg is not None:
-            dense_kwargs["kernel_regularizer"] = reg
-
-        # Create Dense layer with dynamic arguments
-        x = Dense(**dense_kwargs)(x)
-
-        # Add dropout layers if requested
+     # Build hidden layers
+    for i in range(hp.Int("num_layers", 1, 5)):
+        units = hp.Choice(f"units_{i}", values=[16, 32, 64, 128])
+        x = Dense(units=units, activation=activation,
+                  kernel_regularizer=kernel_regularizer)(x)
         if include_dropout:
-            x = Dropout(0.2)(x)
+            x = Dropout(dropout_strength)(x)
 
     # From here the model definition depends on which outputs where indicated in the list_of_outputs
     output_dict = {}
@@ -120,7 +128,7 @@ def build_model(hp, list_of_outputs, x_train, loss_function, include_dropout = F
         metric_dict["pH"] = ["mae", "mse"] # add measures that make sense for pH to the metrics 
 
     if "lime" in list_of_outputs:
-        output_lime = Dense(1, name="lime", activation=hp.Choice("activation_last_layer", values=["linear", "relu"]))(x)
+        output_lime = Dense(1, name="lime", activation="linear")(x)
         output_dict["lime"] = output_lime
         metric_dict["lime"] = ["mae", "mse"]
 
@@ -149,13 +157,15 @@ def perform_moodel_training_with_tuning(imputation_scenario,
                                         model_name, 
                                         list_of_outputs, 
                                         loss_function,
+                                        results_validation, 
+                                        results_test,
                                         include_weigths = False, 
                                         include_dropout = False,
+                                        include_reg = False, 
                                         include_lime_ph_penalty = False, 
                                         lambda_penalty = 0.001, 
                                         epochs = 100, 
-                                        batch_size = 32,
-                                        reg = None):
+                                        batch_size = 32):
 
     # load training data 
     x_train = pd.read_csv("../data/prepared_data/x_train_" + imputation_scenario + ".csv").values
@@ -179,9 +189,9 @@ def perform_moodel_training_with_tuning(imputation_scenario,
                                include_dropout = include_dropout, 
                                include_lime_ph_penalty = include_lime_ph_penalty, 
                                lambda_penalty = lambda_penalty, 
-                               reg = reg),
+                               include_reg = include_reg),
         objective = create_objectives_from_loss(loss_function, list_of_outputs, include_lime_ph_penalty), 
-        max_trials=50, # 50 - change
+        max_trials=50,
         executions_per_trial=1,
         directory="keras_tuner_logs",
         project_name = model_name 
@@ -282,21 +292,40 @@ def perform_moodel_training_with_tuning(imputation_scenario,
     plt.savefig('./tuning_results/history_plots/' + model_name + '.png')
     plt.close()
 
+    return(results_validation, results_test)
 
 # Example code: 
-# perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+# results_validation, results_test = perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
 #                                     model_name = "example",
 #                                     list_of_outputs = ["lime"],
 #                                     loss_function = {'lime': zero_inflated_mse_loss},
+#                                     results_validation=results_validation,
+#                                     results_test=results_test,
 #                                     include_weigths = True,
-#                                     reg = regularizers.l2(1e-2))
+#                                     epochs = 10
+#                                     )
 
 # results_validation.to_csv('./tuning_results/example_validation.csv', index=False)
 # results_test.to_csv('./tuning_results/example_test.csv', index=False)
 
 
+# Load already trainined model and perform prediction
 
+def load_model_and_predict(model_name, inputs_prediction, df_to_save_output_to):
+    loaded_model = load_model(filepath= "./tuning_results/best_models/"+ model_name + ".keras", compile = False)
+    # perform prediction
+    predicted_values = loaded_model.predict(inputs_prediction)
+    # save outputs
+    if model_name.startswith("lime"):
+        df_to_save_output_to[f"{model_name}.lime"] = list(predicted_values.values())[0]
 
+    elif model_name.startswith("pH"):
+        df_to_save_output_to[f"{model_name}.pH"] = list(predicted_values.values())[0]
+
+    elif model_name.startswith("both"):
+        df_to_save_output_to[model_name + ".pH"] = predicted_values["pH"]
+        df_to_save_output_to[model_name + ".lime"] = predicted_values["lime"] 
+    return  df_to_save_output_to
 
 
 

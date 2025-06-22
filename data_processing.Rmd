@@ -836,7 +836,7 @@ For gwleiter and skfeucht - there are NA values everywhere beyond the aquifers/m
 
 
 ```{r imp_skflucht_and_gwleiter}
-# imputing skflucht
+# imputing the covariates
 df_soil_with_cov <- df_soil_with_cov|>
   mutate(skfeucht = ifelse(is.na(skfeucht), 0, skfeucht),
          gwleiter = ifelse(is.na(gwleiter), 0, gwleiter),

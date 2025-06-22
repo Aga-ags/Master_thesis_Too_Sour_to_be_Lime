@@ -146,34 +146,53 @@ analyze_output <- function(df_long, outcome){
 
 # Choice of imputation strategy and weights inclusion
 ```{r load_imp_data}
-df_imp_pH <- read.csv(file="./tuning_results/final_pH_imputation_scenario_validation.csv")|>
+df_imp_pH <- read.csv(file="./tuning_results/pH_imputation_scenario_validation.csv")|>
   pivot_to_pred_model()
 df_imp_pH
-df_imp_lime <- read.csv(file="./tuning_results/final_lime_imputation_scenario_validation.csv")|>
+
+df_imp_lime <- read.csv(file="./tuning_results/lime_imputation_scenario_validation.csv")|>
   pivot_to_pred_model()
 df_imp_lime
-df_imp_lime_zero_inflation_mse <- read.csv(file="./tuning_results/final_lime_zero_inflation_imputation_scenario_validation.csv")|>
-  pivot_to_pred_model()
-df_imp_lime_zero_inflation_mse
-df_imp_both <- read.csv(file="./tuning_results/final_both_imputation_scenario_validation.csv")|>
+
+df_imp_both <- read.csv(file="./tuning_results/both_imputation_scenario_validation.csv")|>
   pivot_to_pred_model()
 df_imp_both
 
 # Order the model column to have the same order on all graphs
-df_imp_pH$model <- ordered(df_imp_pH$model, levels =c("final_pH_no_site_H2O_no_weights_no_dropout", "final_pH_no_site_no_weights_no_dropout", "final_pH_full_imp_no_weights_no_dropout", "final_pH_no_site_H2O_no_dropout", "final_pH_no_site_no_dropout", "final_pH_full_imp_no_dropout"))
+df_imp_pH$model <- ordered(df_imp_pH$model, levels =c("pH_no_site_H2O_no_weights", "pH_no_site_no_weights", "pH_full_imp_no_weights", "pH_no_site_H2O", "pH_no_site", "pH_full_imp"))
 
-df_imp_lime$model <- ordered(df_imp_lime$model, levels =c("final_lime_no_lime_imputation_no_weights_no_dropout","final_lime_no_lime_imputation_from_lime_classes_no_weights_no_dropout", "final_lime_no_lime_imputation_from_3_5_classes_no_weights_no_dropout", "final_lime_full_imp_no_weights_no_dropout", "final_lime_no_lime_imputation_no_dropout","final_lime_no_lime_imputation_from_lime_classes_no_dropout", "final_lime_no_lime_imputation_from_3_5_classes_no_dropout", "final_lime_full_imp_no_dropout"))
+df_imp_lime$model <- ordered(df_imp_lime$model, levels =c("lime_no_lime_imputation_no_weights","lime_no_lime_imputation_from_lime_classes_no_weights", "lime_no_lime_imputation_from_3_5_classes_no_weights", "lime_full_imp_no_weights", "lime_no_lime_imputation","lime_no_lime_imputation_from_lime_classes", "lime_no_lime_imputation_from_3_5_classes", "lime_full_imp"))
 
-df_imp_lime_zero_inflation_mse$model <- ordered(df_imp_lime_zero_inflation_mse$model, levels = c("final_lime_no_lime_imputation_no_weights_no_dropout_zero_inflated_mse","final_lime_no_lime_imputation_from_lime_classes_no_weights_no_dropout_zero_inflated_mse", "final_lime_no_lime_imputation_from_3_5_classes_no_weights_no_dropout_zero_inflated_mse", "final_lime_full_imp_no_weights_no_dropout_zero_inflated_mse", "final_lime_no_lime_imputation_no_dropout_zero_inflated_mse","final_lime_no_lime_imputation_from_lime_classes_no_dropout_zero_inflated_mse", "final_lime_no_lime_imputation_from_3_5_classes_no_dropout_zero_inflated_mse", "final_lime_full_imp_no_dropout_zero_inflated_mse"))
 
 df_imp_both$model <- ordered(df_imp_both$model, levels =c(
-  "final_both_full_imp_no_dropout_both_mse_no_weights", "final_both_no_site_H2O_no_dropout_both_mse_no_weights", 
-  "final_both_no_site_no_dropout_both_mse_no_weights",
-  "final_both_no_lime_imputation_no_dropout_both_mse_no_weights", 
-  "final_both_no_lime_imputation_from_lime_classes_no_dropout_both_mse_no_weights", "final_both_no_lime_imputation_from_3_5_classes_no_dropout_both_mse_no_weights", "final_both_no_imputation_no_dropout_both_mse_no_weights", "final_both_no_lime_imputation_site_no_dropout_both_mse_no_weights", "final_both_no_lime_imputation_from_lime_classes_H2O_site_no_dropout_both_mse_no_weights", "final_both_no_lime_imputation_from_lime_classes_site_no_dropout_both_mse_no_weights", "final_both_no_lime_imputation_from_3_5_classes_H2O_site_no_dropout_both_mse_no_weights", "final_both_no_lime_imputation_from_3_5_classes_site_no_dropout_both_mse_no_weights", 
-  "final_both_full_imp_no_dropout_both_mse", "final_both_no_site_H2O_no_dropout_both_mse", "final_both_no_site_no_dropout_both_mse","final_both_no_lime_imputation_no_dropout_both_mse", "final_both_no_lime_imputation_from_lime_classes_no_dropout_both_mse", "final_both_no_lime_imputation_from_3_5_classes_no_dropout_both_mse", "final_both_no_imputation_no_dropout_both_mse", "final_both_no_lime_imputation_site_no_dropout_both_mse", "final_both_no_lime_imputation_from_lime_classes_H2O_site_no_dropout_both_mse", "final_both_no_lime_imputation_from_lime_classes_site_no_dropout_both_mse", "final_both_no_lime_imputation_from_3_5_classes_H2O_site_no_dropout_both_mse", "final_both_no_lime_imputation_from_3_5_classes_site_no_dropout_both_mse"
+  "both_no_imputation_no_weights",
+  "both_no_lime_imputation_site_no_weights",
+  "both_no_lime_imputation_no_weights",
+  "both_no_lime_imputation_from_lime_classes_H2O_site_no_weights",
+  "both_no_lime_imputation_from_lime_classes_site_no_weights", 
+  "both_no_lime_imputation_from_lime_classes_no_weights",
+  "both_no_lime_imputation_from_3_5_classes_H2O_site_no_weights", 
+  "both_no_lime_imputation_from_3_5_classes_site_no_weights",
+  "both_no_lime_imputation_from_3_5_classes_no_weights", 
+  "both_no_site_H2O_no_weights", 
+  "both_no_site_no_weights",
+  "both_full_imp_no_weights", 
+  "both_no_imputation",
+  "both_no_lime_imputation_site",
+  "both_no_lime_imputation",
+  "both_no_lime_imputation_from_lime_classes_H2O_site",
+  "both_no_lime_imputation_from_lime_classes_site", 
+  "both_no_lime_imputation_from_lime_classes",
+  "both_no_lime_imputation_from_3_5_classes_H2O_site", 
+  "both_no_lime_imputation_from_3_5_classes_site",
+  "both_no_lime_imputation_from_3_5_classes", 
+  "both_no_site_H2O", 
+  "both_no_site",
+  "both_full_imp"
 ))
 ```
+
+
 ```{r imp_weights_pH}
 # compare the model perfomance across imputations for univariate pH model:
 analyze_output(df_imp_pH, outcome = "pH")
@@ -184,13 +203,6 @@ analyze_output(df_imp_pH, outcome = "pH")
 analyze_output(df_imp_lime, outcome = "lime")
 ```
 
-```{r imp_weights_lime_with_zero_inflated_mse}
-# compare the model perfomance across imputations for univariate lime content model:
-analyze_output(df_imp_lime_zero_inflation_mse, outcome = "lime")
-```
-
-
-
 
 ```{r imp_weights_both}
 # compare the model perfomance across imputations for univariate lime content model:
@@ -199,31 +211,63 @@ analyze_output(df_imp_both, outcome = "lime")
 ```
 
 
+```{r}
+xtable(metrics_by_model(df_imp_both, outcome = "pH"), digits = 3)
+xtable(metrics_by_model(df_imp_both, outcome = "lime"), digits = 3)
+```
+
+## Overfitting
+
+```{r}
+overfit_df <- read.csv(file="./tuning_results/overfitting_parameter_tuning.csv")|>
+  pivot_to_pred_model()
+
+analyze_output(overfit_df, outcome = "pH")
+analyze_output(overfit_df, outcome = "lime")
+```
+```{r}
+overfit_df <- read.csv(file="./tuning_results/zero_mse_parameter_tuning.csv")|>
+  pivot_to_pred_model()
+
+analyze_output(overfit_df, outcome = "lime")
+```
+```{r}
+lambda_df <- read.csv(file="./tuning_results/lambda_parameter_tuning.csv")|>
+  pivot_to_pred_model()
+lambda_df
+analyze_output(lambda_df, outcome = "lime")
+
+mse_of_rule_points_negative_incorrect(lambda_df)
+```
+Best perfomance: lanbda 0.001, then, 0.5
 
 
 
 # Evaluation of consistency 
-```{r}
-# Prepare parameters for de-scaling pH and lime conent
+
+```{r extract_best_models_df}
+
+# Prepare parameters for de-scaling pH and lime content
 scaling_parameters <- read.csv(file= "scaling_parameters.csv")
 
 ph_mean <- scaling_parameters$mean[scaling_parameters$variable=="pH"]
 ph_std <- scaling_parameters$sd[scaling_parameters$variable=="pH"]
 lime_mean <- scaling_parameters$mean[scaling_parameters$variable=="lime"]
 lime_std <- scaling_parameters$sd[scaling_parameters$variable=="lime"]
-```
+
+# Create base dataframe with observed values to join with
+df_best_models <- read.csv(file= "../data/prepared_data/y_valid.csv")|>
+  dplyr::select(pH, lime) |>
+  mutate(pH = (pH * ph_std) + ph_mean,
+         lime = (lime * lime_std) + lime_mean,
+         model = "Observed values")
+# add index to later join by
+df_best_models$id <- seq.int(nrow(df_best_models))
 
 
-```{r extract_best_models}
-# Create empty dataframe to join with
-df_best_models  <- data.frame(id = integer(),
-                 model = factor(), 
-                 predicted_pH = integer(), 
-                 predicted_lime = integer(),
-                 stringsAsFactors=TRUE) 
 
 # Extract the best model:
-extract_best_model <- function(file_name, best_model_name, base_model){
+extract_best_model <- function(file_name, best_model_name, rename_to, df_to_join){
   ph_col <- paste0(best_model_name, ".pH")
   lime_col <- paste0(best_model_name, ".lime")
   
@@ -233,39 +277,60 @@ extract_best_model <- function(file_name, best_model_name, base_model){
   
   df <- df |>
     dplyr::select(id, ph_col, lime_col)|>
-    rename(predicted_pH = ph_col, 
-           predicted_lime = lime_col)|>
+    rename(pH = ph_col, 
+           lime = lime_col)|>
     # de-scale the predicted values
-    mutate(predicted_pH = (predicted_pH * ph_std) + ph_mean,
-         predicted_lime = (predicted_lime * lime_std) + lime_mean,
-         model = best_model_name)
+    mutate(pH = (pH * ph_std) + ph_mean,
+         lime = (lime * lime_std) + lime_mean,
+         model = rename_to)
   
-  base_model <- dplyr::bind_rows(base_model, df)
-  return(base_model)
+  df_to_join <- dplyr::bind_rows(df_to_join, df)
+  return(df_to_join)
 }
 
-df_best_models <- extract_best_model("final_both_imputation_scenario_validation", best_model_name = "final_both_full_imp_no_dropout_both_mse", df_best_models)
-df_best_models <- extract_best_model("final_both_imputation_scenario_validation", best_model_name = "final_both_no_site_no_dropout_both_mse", df_best_models)
-
-df_best_models
-
+df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_1", rename_to = "both_penalty_1", df_best_models)
+df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_075", rename_to = "both_penalty_0_75", df_best_models)
+df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_05", rename_to = "both_penalty_0_5",df_best_models)
+df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_025", rename_to = "both_penalty_0_25",df_best_models)
+df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_01", rename_to = "both_penalty_0_1",df_best_models)
+df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_001", rename_to = "both_penalty_0_01",df_best_models)
+df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_0001", rename_to = "both_penalty_0_001",df_best_models)
 ```
 
 
-```{r extract_percentage_rule_broken}
-percentage_rule_broken <- function(model_df){
-  number_of_pH_below_65 <- model_df|>
-    filter(predicted_pH < 6.5)|>
-    nrow()
-  number_of_rule_breaks <- model_df|>
-    filter(predicted_pH < 6.5)|>
-    filter(predicted_lime > 0.0001)|>
-    nrow()
-  percentage_rule_breaks <- number_of_rule_breaks/number_of_pH_below_65 * 100
-  return(percentage_rule_breaks)
-}
-percentage_rule_broken(df_both_best_model_de_standardized)
+```{r confusion_matrix}
+# Make "confusion matrices" of each model
+
+make_ph_lime_confusion_matrix <- function(df, model_name) {
+  # Categorize each row
+  df <- df %>%
+    filter(model == model_name) %>%
+    mutate(
+      pH_group = ifelse(pH < 6.5, "<6.5", "≥6.5"),
+      lime_group = ifelse(lime > 0.0001, "lime > 0", "lime ≤ 0")
+    )
   
+  # Create contingency table
+  count_table <- df %>%
+    count(pH_group, lime_group) %>%
+    tidyr::complete(pH_group, lime_group, fill = list(n = 0))  # ensure all combinations exist
+  
+  # Total for percentages
+  total <- sum(count_table$n)
+  
+  # Create matrix with both count and percentage
+  formatted_matrix <- count_table %>%
+    mutate(label = sprintf("%d (%.1f%%)", n, 100 * n / total)) %>%
+    select(pH_group, lime_group, label) %>%
+    pivot_wider(names_from = lime_group, values_from = label) %>%
+    column_to_rownames("pH_group")
+  
+  return(formatted_matrix)
+}
+
+make_ph_lime_confusion_matrix(df_best_models, model_name = "Observed values")  
+make_ph_lime_confusion_matrix(df_best_models, model_name = "both_no_3_5_classes_dropout_penatly_05") 
+
 ```
 
 
@@ -274,39 +339,35 @@ percentage_rule_broken(df_both_best_model_de_standardized)
 
 mse_of_rule_points_negative_incorrect <- function(model_df){
    metrics <- model_df|>
-    filter(predicted_pH < 6.5)|>
+    filter(pH < 6.5)|>
      group_by(model)|>
      summarise(
-      RMSE = sqrt(mean((predicted_lime - 0)^2)), # we assume actual value is 0
-      MAE  = mean(abs(predicted_lime  - 0)),
-      rule_breaks = sum(predicted_lime > 0.0001),
-      total_cases = n(),
-      percent_rule_break = 100 * rule_breaks / total_cases
-    ) %>%
-    dplyr::select(-rule_breaks, -total_cases)
+      RMSE = sqrt(mean((lime - 0)^2)), # we assume actual value is 0
+      MAE  = mean(abs(lime  - 0))
+    )
   return(metrics)
 }
 
 mse_of_rule_points_negative_correct <- function(model_df){
    metrics <- model_df|>
-    filter(predicted_pH < 6.5)|>
-    filter(predicted_lime > 0.0001)|> # filter only positive lime predictions
+    filter(pH < 6.5)|>
+    filter(lime > 0.0001)|> # filter only positive lime predictions
      group_by(model)|>
      summarise(
-      RMSE = sqrt(mean((predicted_lime - 0)^2)), # we assume actual value is 0
-      MAE  = mean(abs(predicted_lime  - 0)))
+      RMSE = sqrt(mean((lime - 0)^2)), # we assume actual value is 0
+      MAE  = mean(abs(lime  - 0)))
   return(metrics)
 }
 mse_of_rule_points_negative_incorrect(df_best_models)
 mse_of_rule_points_negative_correct(df_best_models)
 ```
-
+Again: 0.001 then 0.5 perform best
 
 ```{r histogram_consitency}
 histogram_lime_below_65 <- function(model_df){
    plot <- model_df|>
-    filter(predicted_pH < 6.5)|>
-     ggplot(aes(x = predicted_lime))+
+    filter(pH < 6.5)|>
+     ggplot(aes(x = lime))+
      geom_histogram()+
      facet_wrap(~model)+
      theme_minimal()
@@ -319,8 +380,8 @@ histogram_lime_below_65(df_best_models)
 ```{r}
 predicted_against_predicted <- function(model_df){
    plot <- model_df|>
-    mutate(low_pH = ifelse(predicted_pH < 6.5, TRUE, FALSE))|>
-     ggplot(aes(x = predicted_pH, y = predicted_lime, colour = low_pH))+
+    mutate(low_pH = ifelse(pH < 6.5, TRUE, FALSE))|>
+     ggplot(aes(x = pH, y = lime, colour = low_pH))+
      geom_point()+
      facet_wrap(~model)+
      theme_minimal()
@@ -338,6 +399,6 @@ predicted_against_predicted(df_best_models)
 
 ```{r test_latex, results=tex}
 
-xtable(head(df_both_best_model))
+xtable(metrics_by_model())
 
 ```

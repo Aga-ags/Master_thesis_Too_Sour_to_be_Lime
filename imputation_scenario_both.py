@@ -22,149 +22,197 @@ results_test = y_test
 
 #train the multivariate NN with pH and lime as output under the various imputation strategies, with and without weights
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "full_imp", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "full_imp", 
                                     model_name = "both_full_imp",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = True)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_site_H2O", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_site_H2O", 
                                     model_name = "both_no_site_H2O",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = True)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_site", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_site", 
                                     model_name = "both_no_site",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = True)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation", 
                                     model_name = "both_no_lime_imputation",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = True)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes", 
                                     model_name = "both_no_lime_imputation_from_lime_classes",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = True)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
                                     model_name = "both_no_lime_imputation_from_3_5_classes",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = True)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_imputation", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_imputation", 
                                     model_name = "both_no_imputation",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = True)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_site", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_site", 
                                     model_name = "both_no_lime_imputation_site",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = True)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes_H2O_site", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes_H2O_site", 
                                     model_name = "both_no_lime_imputation_from_lime_classes_H2O_site",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = True)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes_site", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes_site", 
                                     model_name = "both_no_lime_imputation_from_lime_classes_site",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = True)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes_H2O_site", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes_H2O_site", 
                                     model_name = "both_no_lime_imputation_from_3_5_classes_H2O_site",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = True)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes_site", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes_site", 
                                     model_name = "both_no_lime_imputation_from_3_5_classes_site",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = True)
 
 # multivariate, but no weights
-train.perform_moodel_training_with_tuning(imputation_scenario = "full_imp", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "full_imp", 
                                     model_name = "both_full_imp_no_weights",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = False)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_site_H2O", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_site_H2O", 
                                     model_name = "both_no_site_H2O_no_weights",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = False)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_site", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_site", 
                                     model_name = "both_no_site_no_weights",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = False)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation", 
                                     model_name = "both_no_lime_imputation_no_weights",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = False)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes", 
                                     model_name = "both_no_lime_imputation_from_lime_classes_no_weights",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = False)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
                                     model_name = "both_no_lime_imputation_from_3_5_classes_no_weights",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = False)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_imputation", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_imputation", 
                                     model_name = "both_no_imputation_no_weights",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = False)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_site", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_site", 
                                     model_name = "both_no_lime_imputation_site_no_weights",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = False)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes_H2O_site", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes_H2O_site", 
                                     model_name = "both_no_lime_imputation_from_lime_classes_H2O_site_no_weights",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = False)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes_site", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_lime_classes_site", 
                                     model_name = "both_no_lime_imputation_from_lime_classes_site_no_weights",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = False)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes_H2O_site", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes_H2O_site", 
                                     model_name = "both_no_lime_imputation_from_3_5_classes_H2O_site_no_weights",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = False)
 
-train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes_site", 
+results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes_site", 
                                     model_name = "both_no_lime_imputation_from_3_5_classes_site_no_weights",
                                     list_of_outputs = ["pH", "lime"],
                                     loss_function = {'pH': 'mse', 'lime': 'mse'},
+                                    results_validation=results_validation,
+                                    results_test=results_test,
                                     include_weigths = False)
 
 

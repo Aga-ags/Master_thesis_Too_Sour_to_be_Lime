@@ -1,0 +1,269 @@
+---
+title: "Preparing for the predictions for entire area"
+author: "Agnieszka Kubica"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r libraries}
+library(tidyverse)
+library(terra)
+library(sf)
+library(ggmice)
+library(obliquer)
+library(recipes)
+```
+
+# Making of the dataframe for prediction 
+
+```{r}
+# Create a list of paths to all of the tifs 
+numeric_folder <- "../data/covariates/numeric"
+tif_files_numeric <- list.files(numeric_folder, pattern = "\\.tif$", full.names = TRUE)
+
+cetegoric_folder <- "../data/covariates/categoric"
+tif_files_cetegoric <- list.files(cetegoric_folder, pattern = "\\.tif$", full.names = TRUE)
+
+# Load as rasters
+rasters_num_list <- lapply(tif_files_numeric, rast)
+rasters_cat_list <- lapply(tif_files_cetegoric, rast)
+
+# Assign EPSG:2056 (the CRS are rasters should already be in)
+rasters_num_list <- lapply(rasters_num_list, function(r) {
+  crs(r) <- "EPSG:2056"
+  return(r)
+})
+rasters_cat_list <- lapply(rasters_cat_list, function(r) {
+  crs(r) <- "EPSG:2056"
+  return(r)
+})
+
+# Pick a raster with smallest resolution 
+ref_raster <- rasters_num_list[[which.min(sapply(rasters_num_list, function(r) prod(res(r))))]]
+ref_raster
+
+rasters_aligned_num <- lapply(rasters_num_list, function(r) {
+  # Reproject to match CRS
+  r_proj <- project(r, ref_raster)
+  
+  # Resample to match resolution and extent
+  r_resampled <- resample(r_proj, ref_raster, method = "bilinear")
+  return(r_resampled)
+})
+
+rasters_aligned_cat <- lapply(rasters_cat_list, function(r) {
+  # Reproject to match CRS
+  r_proj <- project(r, ref_raster)
+  
+  # Resample to match resolution and extent
+  r_resampled <- resample(r_proj, ref_raster, method = "near")
+  return(r_resampled)
+})
+
+# Combine both numeric and categorical rasters
+all_rasters <- c(rasters_aligned_num, rasters_aligned_cat)
+
+# Stack into a single SpatRaster
+stacked_rasters <- rast(all_rasters)
+
+# Extract base names without extension
+layer_names <- c(
+  tools::file_path_sans_ext(basename(tif_files_numeric)),
+  tools::file_path_sans_ext(basename(tif_files_cetegoric))
+)
+
+names(stacked_rasters) <- layer_names
+```
+```{r arable_land}
+# Subset the points to only arable land
+areable_land_raster <- terra::rast("../data/zh_arable_land_s3.tif")
+crs(areable_land_raster)  <- "epsg:2056"
+
+# Ensure it's aligned with the stacked raster *(same resolution)
+areable_land_raster_resampled <- resample(areable_land_raster, stacked_rasters, method = "near")
+
+# Mask the full raster stack where arable_land exists
+masked_rasters <- mask(stacked_rasters, areable_land_raster_resampled, maskvalue = 0) 
+
+df_arable <- as.data.frame(masked_rasters, xy = TRUE, na.rm = TRUE)
+```
+```{r}
+ write.csv(df_arable, file = '../data/prepared_data/arable_land_raster_no_processing.csv', row.names=FALSE)
+```
+
+# Prepare the soil covariates
+
+```{r}
+df_arable <- read.csv(file='../data/prepared_data/arable_land_raster_no_processing.csv')
+df_arable
+```
+
+
+```{r missing_data}
+# Impute the missing data in variables that needed it before 
+
+df_arable <- df_arable|>
+  mutate(skfeucht = ifelse(is.na(skfeucht), 0, skfeucht),
+         gwleiter = ifelse(is.na(gwleiter), 0, gwleiter),
+         feucht_wild =  ifelse(is.na(feucht_wild), 0, feucht_wild), 
+          bedgwleiter  = ifelse(is.na(bedgwleiter), 0, bedgwleiter))
+
+# impute drainfor
+
+points_sf <- df_arable |>
+    st_as_sf(coords = c("x", "y"), crs = 2056)
+
+#raster file
+raster_file <- "../data/covariates/numeric/drainfor.tif"
+raster_file <- terra::rast(raster_file)
+crs(raster_file) <- "epsg:2056"
+
+# Extract raster values at points
+point_vals <- terra::extract(raster_file, points_sf)
+
+# Identify missing indices
+missing_idx <- which(is.na(point_vals[[2]]))  # assuming second column holds the raster value
+
+# Get non-NA raster cells and their coordinates
+non_na_cells <- which(!is.na(values(raster_file)))
+non_na_coords <- xyFromCell(raster_file, non_na_cells)
+non_na_values <- values(raster_file)[non_na_cells]
+
+# Initialize imputed values vector
+imputed_values <- point_vals[[2]]
+
+for (i in missing_idx) {
+  # Get point coordinates
+  pt_coord <- st_coordinates(points_sf[i, ])
+  
+  # Compute distances to non-NA cells
+  dists <- sqrt((non_na_coords[,1] - pt_coord[1])^2 + (non_na_coords[,2] - pt_coord[2])^2)
+  
+  # Filter by radius (≤ 1000 units)
+  within_radius_idx <- which(dists <= 1000)
+  
+  if (length(within_radius_idx) > 0) {
+    # Impute using median of values within radius
+    imputed_values[i] <- median(non_na_values[within_radius_idx], na.rm = TRUE)
+  } else {
+    # Optional: if no neighbor within radius, leave as NA or use closest
+    closest_idx <- which.min(dists)
+    imputed_values[i] <- non_na_values[closest_idx]
+  }
+}
+
+# Add imputed values to points
+points_sf$imputed_raster_value <- imputed_values
+
+# Add the imputed values to original column
+points_sf <- points_sf|>
+  mutate(drainfor = ifelse(is.na(drainfor), imputed_raster_value, drainfor))|>
+  dplyr::select(!c("imputed_raster_value"))
+
+no_geometry <- points_sf %>%
+  st_drop_geometry()
+
+df_arable_processed <- cbind(no_geometry, data.frame(st_coordinates(points_sf[,1])))
+```
+
+```{r check_missing}
+df_arable_processed %>%
+  dplyr::select(where(~ anyNA(.)))
+# There is no more missing data
+```
+
+```{r}
+# set categoric variables as factors
+df_arable_processed <- df_arable_processed %>%
+  mutate(across(75:89, as.factor))
+
+df_arable_processed
+```
+# Add remaining covariates 
+
+```{r OBCs}
+# creating the oblique geographic coordinates based on a raster
+
+my_cov <- terra::rast("../data/covariates/numeric/drumdist.tif")
+crs(my_cov) <- "EPSG:2056"
+ogcs <- obliquify(my_cov, 10) #drastic increase in prediction performance stopped around here for most models
+ogcs
+
+# add the OBCs to dataframe
+points_for_rotation <- df_arable_processed|>
+  vect(geom = c("X", "Y"), crs = "EPSG:2056")
+
+df_arable_with_OBCs <- extract(ogcs, points_for_rotation, bind = TRUE)
+df_arable_with_OBCs_values <- values(df_arable_with_OBCs)
+
+#add standard coordinates to make plotting easier
+df_arable_with_OBCs_values <- cbind(df_arable_with_OBCs_values, crds(df_arable_with_OBCs, df=TRUE, list=FALSE))
+df_arable_with_OBCs_values
+```
+
+```{r add_depth_and_year}
+df_depth_10 <- df_arable_with_OBCs_values|>
+  mutate(depth = 10, 
+         recording_year = 1995)
+
+df_depth_60 <- df_arable_with_OBCs_values|>
+  mutate(depth = 60, 
+         recording_year = 1995)
+```
+
+# Prepare the dataframe for modelling 
+
+```{r standardize}
+# Prepare parameters for standardizing the covariates
+scaling_parameters <- read.csv(file= "scaling_parameters.csv")
+scaling_parameters
+# Convert scaling_df to named vectors for easy access
+means <- setNames(scaling_parameters$mean, scaling_parameters$variable)
+sds   <- setNames(scaling_parameters$sd, scaling_parameters$variable)
+
+numeric_variables <- df_depth_10|>
+  keep(is.numeric) 
+
+# Identify which columns in df to scale (i.e., those in scaling_df$variable)
+vars_to_scale <- intersect(names(numeric_variables), scaling_parameters$variable)
+
+# Scale the variables
+df_depth_10_scaled <- df_depth_10 %>%
+  mutate(across(all_of(vars_to_scale), ~ (. - means[cur_column()]) / sds[cur_column()]))
+
+df_depth_60_scaled <- df_depth_60 %>%
+  mutate(across(all_of(vars_to_scale), ~ (. - means[cur_column()]) / sds[cur_column()]))
+```
+
+
+```{r one_hot_encode}
+recipe_obj <- recipe(~ ., data = df_depth_10_scaled) %>%
+  step_dummy(all_nominal(), one_hot = TRUE) %>%
+  prep()
+
+one_hot_df_10 <- bake(recipe_obj, new_data = NULL)
+one_hot_df_10
+
+recipe_obj <- recipe(~ ., data = df_depth_60_scaled) %>%
+  step_dummy(all_nominal(), one_hot = TRUE) %>%
+  prep()
+
+one_hot_df_60 <- bake(recipe_obj, new_data = NULL)
+one_hot_df_60
+```
+
+
+```{r remove_irelevant_var}
+# remove id, X, Y
+
+# reorder correctly
+df_reordered <- df_to_reorder %>%
+  select(all_of(names(reference_df)))
+
+# transform into matrix
+```
+
+```{r save_ready_matrix}
+
+```
+
