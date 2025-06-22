@@ -12,7 +12,7 @@ x_test = pd.read_csv("../data/prepared_data/x_test.csv").values
 y_test = pd.read_csv("../data/prepared_data/y_test.csv")
 
 # load inputs for map
-#x_map = pd.read_csv("../data/prepared_data/.csv").values
+x_map = pd.read_csv("../data/prepared_data/.csv").values # change: add the links
 
 # define dfs to save all results into
 results_test = y_test

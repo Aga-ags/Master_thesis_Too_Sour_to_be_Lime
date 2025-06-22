@@ -7,9 +7,11 @@ os.environ["KERAS_BACKEND"] = "tensorflow"
 np.random.seed(189)
 import tensorflow as tf
 import keras
-from keras import Model, Input, regularizers
+from keras import Model, Input, regularizers, activations
 from keras.models import load_model
-from keras.layers import Dense, Dropout, Concatenate
+from keras.layers import Dense, Dropout, Concatenate, Activation
+from keras.utils import get_custom_objects
+import keras.backend as K
 import matplotlib.pyplot as plt
 import keras_tuner as kt
 import json
@@ -27,9 +29,13 @@ y_test = pd.read_csv("../data/prepared_data/y_test.csv")
 results_validation = y_val
 results_test = y_test
 
+def custom_relu(x):
+    return tf.where(x > - 0.5062935, x, tf.constant(- 0.5062935, dtype=x.dtype))
+
+
 # custom objective for zero - inflation
 def zero_inflated_mse_loss(y_true, y_pred):
-    # Due to standarization lime = 0 is now roughly equal to 0.5062935, which is not a nice intiger to compare to, therefore we set a tolerance level
+    # Due to standarization lime = 0 is now roughly equal to - 0.5062935, which is not a nice intiger to compare to, therefore we set a tolerance level
     tolerance = 1e-4
     mask_zero = tf.abs(y_true + 0.5062935) < tolerance # values from -0.0001 to 0.0001 are considered 0
     mask_gt_zero = y_true > (-0.5062935 + tolerance) # values larger than -0.5063935 are considered larger than 0
@@ -128,7 +134,8 @@ def build_model(hp, list_of_outputs, x_train, loss_function, include_dropout = F
         metric_dict["pH"] = ["mae", "mse"] # add measures that make sense for pH to the metrics 
 
     if "lime" in list_of_outputs:
-        output_lime = Dense(1, name="lime", activation="linear")(x)
+        #output_lime = Dense(1, name="lime", activation=Activation(lambda x: keras.activations.relu(x, threshold=-0.5062935)))(x) # activation function: 
+        output_lime = Dense(1, name="lime", activation=custom_relu)(x)
         output_dict["lime"] = output_lime
         metric_dict["lime"] = ["mae", "mse"]
 
@@ -191,7 +198,7 @@ def perform_moodel_training_with_tuning(imputation_scenario,
                                lambda_penalty = lambda_penalty, 
                                include_reg = include_reg),
         objective = create_objectives_from_loss(loss_function, list_of_outputs, include_lime_ph_penalty), 
-        max_trials=50,
+        max_trials=50, 
         executions_per_trial=1,
         directory="keras_tuner_logs",
         project_name = model_name 

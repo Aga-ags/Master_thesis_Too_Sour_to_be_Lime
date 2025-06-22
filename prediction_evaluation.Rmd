@@ -12,8 +12,8 @@ library(xtable) # export tables to LaTeX
 ```
 
 
-
 # Functions
+## Functions for evaluating accuracy
 ```{r}
 # Pivot to longer 
 pivot_to_pred_model <- function(df){
@@ -143,6 +143,97 @@ analyze_output <- function(df_long, outcome){
 }
 ```
 
+## Functions for evaluating consitency 
+
+```{r f_extract_best_model}
+# Extract the best model:
+extract_best_model <- function(file_name, best_model_name, rename_to, df_to_join){
+  ph_col <- paste0(best_model_name, ".pH")
+  lime_col <- paste0(best_model_name, ".lime")
+  
+  df <-  read.csv(file= paste0("./tuning_results/", file_name, ".csv"))
+  # add index to later join by
+  df$id <- seq.int(nrow(df))  
+  
+  df <- df |>
+    dplyr::select(id, ph_col, lime_col)|>
+    rename(pH = ph_col, 
+           lime = lime_col)|>
+    # de-scale the predicted values
+    mutate(pH = (pH * ph_std) + ph_mean,
+         lime = (lime * lime_std) + lime_mean,
+         model = rename_to)
+  
+  df_to_join <- dplyr::bind_rows(df_to_join, df)
+  return(df_to_join)
+}
+```
+
+```{r f_confusion_matrix}
+make_ph_lime_confusion_matrix <- function(df, model_name) {
+  # Categorize each row
+  df <- df %>%
+    filter(model == model_name) %>%
+    mutate(
+      pH_group = ifelse(pH < 6.5, "<6.5", "≥6.5"),
+      lime_group = ifelse(lime > 0.0001, "lime > 0", ifelse( lime < 0.0001, "lime < 0", "lime = 0") )
+    )
+  
+  # Create contingency table
+  count_table <- df %>%
+    count(pH_group, lime_group) %>%
+    tidyr::complete(pH_group, lime_group, fill = list(n = 0))  # ensure all combinations exist
+  
+  # Total for percentages
+  total <- sum(count_table$n)
+  
+  # Create matrix with both count and percentage
+  formatted_matrix <- count_table %>%
+    mutate(label = sprintf("%d (%.1f%%)", n, 100 * n / total)) %>%
+    select(pH_group, lime_group, label) %>%
+    pivot_wider(names_from = lime_group, values_from = label) %>%
+    column_to_rownames("pH_group")
+  
+  return(formatted_matrix)
+}
+```
+
+```{r f_metrics_consistency}
+mse_of_rule_points_negative_incorrect <- function(model_df){
+   metrics <- model_df|>
+    filter(pH < 6.5)|>
+     group_by(model)|>
+     summarise(
+      RMSE = sqrt(mean((lime - 0)^2)), # assume actual value is 0
+      MAE  = mean(abs(lime  - 0))
+    )
+  return(metrics)
+}
+```
+
+```{r f_histogram_consistency}
+histogram_lime_below_65 <- function(model_df){
+   plot <- model_df|>
+    filter(pH < 6.5)|>
+     ggplot(aes(x = lime))+
+     geom_histogram()+
+     facet_wrap(~model)+
+     theme_minimal()
+   return(plot)
+}
+```
+
+```{r f_infared_lime_pH_relationship}
+predicted_against_predicted <- function(model_df){
+   plot <- model_df|>
+    mutate(low_pH = ifelse(pH < 6.5, TRUE, FALSE))|>
+     ggplot(aes(x = pH, y = lime, colour = low_pH))+
+     geom_point()+
+     facet_wrap(~model)+
+     theme_minimal()
+   return(plot)
+}
+```
 
 # Choice of imputation strategy and weights inclusion
 ```{r load_imp_data}
@@ -210,6 +301,7 @@ analyze_output(df_imp_both, outcome = "pH")
 analyze_output(df_imp_both, outcome = "lime")
 ```
 
+Imputation without 3-5 lime site classes was chosen with inclusion of weights. 
 
 ```{r}
 xtable(metrics_by_model(df_imp_both, outcome = "pH"), digits = 3)
@@ -225,27 +317,50 @@ overfit_df <- read.csv(file="./tuning_results/overfitting_parameter_tuning.csv")
 analyze_output(overfit_df, outcome = "pH")
 analyze_output(overfit_df, outcome = "lime")
 ```
+
+In univariate pH: 
+Based on metrics - all models are similar to baseline, with dropout having the best performance. 
+Based on scatterplot: Inclusion of regularization prevents the model from predicting higher pH when that is adequate. The graph of with dropout and without look similar.
+Based on residual scatterplot: Again, we see a strong cut of when reguralization is used. Use of dropout leads to more negative residuals in the lower pH.
+Based on histogram comparison: No dropout leads to the closest replication of the distribution in validation data. Use of dropout leads to prediction of more small pH (which is underrepresented in this sample). Also, again, regularization leads to no really high pH - which is in the sample. 
+
+In univariate lime: 
+Based on metrics: Inclusion of dropout - slight improvement of RMSE in this sample, reg makes it a little bit worse. MAE is worse with any measure - this indicates that with dropout there is less really big errors, but the average error is larger. The measures make the prediction of zero lime worse, but the non-zero lime gets better. 
+Based on scatterplots: All models very strongly underestimate a lot of the higher lime values.
+Based on residual scatterplot: All models show the trend of overestimating small lime values and underestimating large ones. 
+Based on barplot residuals: More positive residuals than negative.
+Based on histogram comparison: Very clearly no dropout leads to a better estimation of the smaller values. 
+
+Multivariate model:
+Matrics: Inclusion of any method reduces performance of pH, but the RMSE of lime is improved. Reguralization and dropout lead to a lower RMSE and MAE. 
+Based on scatterplot: Dropout lead to a flatter prediction of pH and lime (there is virtually no trend). I suspect that the bad RMSE score of no methods model stems from the bad prediction of the 3 extreme values, because otherwise it looks better than the dropout model. 
+Based on histogram comparison: the models with no methods looks better on both. 
+
+Conclusion: no to dropout. 
+
+
+# Zero-inflated mse
 ```{r}
 overfit_df <- read.csv(file="./tuning_results/zero_mse_parameter_tuning.csv")|>
   pivot_to_pred_model()
 
 analyze_output(overfit_df, outcome = "lime")
 ```
+The inclusion of zero-mse leads to this gap in prediction around 0.5  - low values are predicted closer to zero. Generally, it does not seem this is particuraly improving the prediction. 
+
+# Lambda - impact on accuracy and consistency 
+
 ```{r}
 lambda_df <- read.csv(file="./tuning_results/lambda_parameter_tuning.csv")|>
   pivot_to_pred_model()
 lambda_df
 analyze_output(lambda_df, outcome = "lime")
-
-mse_of_rule_points_negative_incorrect(lambda_df)
 ```
 Best perfomance: lanbda 0.001, then, 0.5
 
 
-
-# Evaluation of consistency 
-
-```{r extract_best_models_df}
+```{r }
+# Transform the models into the format for consistency evaluation 
 
 # Prepare parameters for de-scaling pH and lime content
 scaling_parameters <- read.csv(file= "scaling_parameters.csv")
@@ -264,30 +379,6 @@ df_best_models <- read.csv(file= "../data/prepared_data/y_valid.csv")|>
 # add index to later join by
 df_best_models$id <- seq.int(nrow(df_best_models))
 
-
-
-# Extract the best model:
-extract_best_model <- function(file_name, best_model_name, rename_to, df_to_join){
-  ph_col <- paste0(best_model_name, ".pH")
-  lime_col <- paste0(best_model_name, ".lime")
-  
-  df <-  read.csv(file= paste0("./tuning_results/", file_name, ".csv"))
-  # add index to later join by
-  df$id <- seq.int(nrow(df))  
-  
-  df <- df |>
-    dplyr::select(id, ph_col, lime_col)|>
-    rename(pH = ph_col, 
-           lime = lime_col)|>
-    # de-scale the predicted values
-    mutate(pH = (pH * ph_std) + ph_mean,
-         lime = (lime * lime_std) + lime_mean,
-         model = rename_to)
-  
-  df_to_join <- dplyr::bind_rows(df_to_join, df)
-  return(df_to_join)
-}
-
 df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_1", rename_to = "both_penalty_1", df_best_models)
 df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_075", rename_to = "both_penalty_0_75", df_best_models)
 df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_05", rename_to = "both_penalty_0_5",df_best_models)
@@ -298,98 +389,30 @@ df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name 
 ```
 
 
-```{r confusion_matrix}
-# Make "confusion matrices" of each model
+```{r evaluate_consistency_lambda}
+# Confusion matrix
+make_ph_lime_confusion_matrix(df_best_models, model_name = "both_penalty_0_001")  
+make_ph_lime_confusion_matrix(df_best_models, model_name = "both_penalty_0_5") 
+make_ph_lime_confusion_matrix(df_best_models, model_name = "both_penalty_0_75") 
 
-make_ph_lime_confusion_matrix <- function(df, model_name) {
-  # Categorize each row
-  df <- df %>%
-    filter(model == model_name) %>%
-    mutate(
-      pH_group = ifelse(pH < 6.5, "<6.5", "≥6.5"),
-      lime_group = ifelse(lime > 0.0001, "lime > 0", "lime ≤ 0")
-    )
-  
-  # Create contingency table
-  count_table <- df %>%
-    count(pH_group, lime_group) %>%
-    tidyr::complete(pH_group, lime_group, fill = list(n = 0))  # ensure all combinations exist
-  
-  # Total for percentages
-  total <- sum(count_table$n)
-  
-  # Create matrix with both count and percentage
-  formatted_matrix <- count_table %>%
-    mutate(label = sprintf("%d (%.1f%%)", n, 100 * n / total)) %>%
-    select(pH_group, lime_group, label) %>%
-    pivot_wider(names_from = lime_group, values_from = label) %>%
-    column_to_rownames("pH_group")
-  
-  return(formatted_matrix)
-}
-
-make_ph_lime_confusion_matrix(df_best_models, model_name = "Observed values")  
-make_ph_lime_confusion_matrix(df_best_models, model_name = "both_no_3_5_classes_dropout_penatly_05") 
-
-```
-
-
-```{r metrics_of_ph_65}
-# Should negative predictions of lime be considered here? If we consider them correct, the error increases 
-
-mse_of_rule_points_negative_incorrect <- function(model_df){
-   metrics <- model_df|>
-    filter(pH < 6.5)|>
-     group_by(model)|>
-     summarise(
-      RMSE = sqrt(mean((lime - 0)^2)), # we assume actual value is 0
-      MAE  = mean(abs(lime  - 0))
-    )
-  return(metrics)
-}
-
-mse_of_rule_points_negative_correct <- function(model_df){
-   metrics <- model_df|>
-    filter(pH < 6.5)|>
-    filter(lime > 0.0001)|> # filter only positive lime predictions
-     group_by(model)|>
-     summarise(
-      RMSE = sqrt(mean((lime - 0)^2)), # we assume actual value is 0
-      MAE  = mean(abs(lime  - 0)))
-  return(metrics)
-}
+# Metrics
 mse_of_rule_points_negative_incorrect(df_best_models)
-mse_of_rule_points_negative_correct(df_best_models)
+
+# Histograms
+histogram_lime_below_65(df_best_models) 
+
+# Scatterplot of pH against lime
+predicted_against_predicted(df_best_models)  
+
 ```
+
+
+
 Again: 0.001 then 0.5 perform best
 
-```{r histogram_consitency}
-histogram_lime_below_65 <- function(model_df){
-   plot <- model_df|>
-    filter(pH < 6.5)|>
-     ggplot(aes(x = lime))+
-     geom_histogram()+
-     facet_wrap(~model)+
-     theme_minimal()
-   return(plot)
-}
 
-histogram_lime_below_65(df_best_models)  
-```
 
-```{r}
-predicted_against_predicted <- function(model_df){
-   plot <- model_df|>
-    mutate(low_pH = ifelse(pH < 6.5, TRUE, FALSE))|>
-     ggplot(aes(x = pH, y = lime, colour = low_pH))+
-     geom_point()+
-     facet_wrap(~model)+
-     theme_minimal()
-   return(plot)
-}
-
-predicted_against_predicted(df_best_models)  
-```
+# Evaluation of consistency of best models
 # Evaluating the consitency at different depths?
 
 
