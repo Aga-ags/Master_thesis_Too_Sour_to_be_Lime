@@ -39,16 +39,7 @@ results_validation, results_test = train.perform_moodel_training_with_tuning(imp
                                     include_lime_ph_penalty = False, 
                                     lambda_penalty = 1)
 
-results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
-                                    model_name = "both_no_3_5_classes_dropout_penatly_075",
-                                    list_of_outputs = ["pH", "lime"],
-                                    loss_function = {'pH': 'mse', 'lime': train.zero_inflated_mse_loss},
-                                    results_validation=results_validation,
-                                    results_test=results_test,
-                                    include_weigths = True, 
-                                    include_dropout = True, 
-                                    include_lime_ph_penalty = False, 
-                                    lambda_penalty = 0.75)
+
 
 results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
                                     model_name = "both_no_3_5_classes_dropout_penatly_05",
@@ -61,16 +52,6 @@ results_validation, results_test = train.perform_moodel_training_with_tuning(imp
                                     include_lime_ph_penalty = False, 
                                     lambda_penalty = 0.5)
 
-results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
-                                    model_name = "both_no_3_5_classes_dropout_penatly_025",
-                                    list_of_outputs = ["pH", "lime"],
-                                    loss_function = {'pH': 'mse', 'lime': train.zero_inflated_mse_loss},
-                                    results_validation=results_validation,
-                                    results_test=results_test,
-                                    include_weigths = True, 
-                                    include_dropout = True, 
-                                    include_lime_ph_penalty = False, 
-                                    lambda_penalty = 0.25)
 
 results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
                                     model_name = "both_no_3_5_classes_dropout_penatly_01",

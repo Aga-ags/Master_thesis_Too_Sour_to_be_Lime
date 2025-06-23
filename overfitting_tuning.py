@@ -5,6 +5,7 @@ np.random.seed(189)
 
 # import the NN training script
 import NN_training_script as train
+import tensorflow as tf
 
 # load data
 # validation

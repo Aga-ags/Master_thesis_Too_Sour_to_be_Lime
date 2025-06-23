@@ -319,7 +319,7 @@ def perform_moodel_training_with_tuning(imputation_scenario,
 # Load already trainined model and perform prediction
 
 def load_model_and_predict(model_name, inputs_prediction, df_to_save_output_to):
-    loaded_model = load_model(filepath= "./tuning_results/best_models/"+ model_name + ".keras", compile = False)
+    loaded_model = load_model(filepath= "./tuning_results/best_models/"+ model_name + ".keras", compile = False, custom_objects={"custom_relu": custom_relu})
     # perform prediction
     predicted_values = loaded_model.predict(inputs_prediction)
     # save outputs

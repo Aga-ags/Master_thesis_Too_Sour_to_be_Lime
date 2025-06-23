@@ -283,6 +283,14 @@ df_imp_both$model <- ordered(df_imp_both$model, levels =c(
 ))
 ```
 
+```{r}
+df<- read.csv(file="./tuning_results/example_validation.csv")|>
+  pivot_to_pred_model()
+df|>  analyze_output(outcome = "lime")
+
+  
+
+```
 
 ```{r imp_weights_pH}
 # compare the model perfomance across imputations for univariate pH model:
@@ -358,7 +366,6 @@ analyze_output(lambda_df, outcome = "lime")
 ```
 Best perfomance: lanbda 0.001, then, 0.5
 
-
 ```{r }
 # Transform the models into the format for consistency evaluation 
 
@@ -378,6 +385,7 @@ df_best_models <- read.csv(file= "../data/prepared_data/y_valid.csv")|>
          model = "Observed values")
 # add index to later join by
 df_best_models$id <- seq.int(nrow(df_best_models))
+
 
 df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_1", rename_to = "both_penalty_1", df_best_models)
 df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_075", rename_to = "both_penalty_0_75", df_best_models)

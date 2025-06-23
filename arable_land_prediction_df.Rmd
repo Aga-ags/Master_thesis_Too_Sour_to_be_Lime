@@ -12,21 +12,21 @@ library(sf)
 library(ggmice)
 library(obliquer)
 library(recipes)
+library(FNN)
 ```
 
-# Making of the dataframe for prediction 
-
+# Making of the dataframe for prediction based on the agricultural area raster 20x20 
 ```{r}
 # Create a list of paths to all of the tifs 
 numeric_folder <- "../data/covariates/numeric"
 tif_files_numeric <- list.files(numeric_folder, pattern = "\\.tif$", full.names = TRUE)
 
-cetegoric_folder <- "../data/covariates/categoric"
-tif_files_cetegoric <- list.files(cetegoric_folder, pattern = "\\.tif$", full.names = TRUE)
+categoric_folder <- "../data/covariates/categoric"
+tif_files_categoric <- list.files(categoric_folder, pattern = "\\.tif$", full.names = TRUE)
 
 # Load as rasters
 rasters_num_list <- lapply(tif_files_numeric, rast)
-rasters_cat_list <- lapply(tif_files_cetegoric, rast)
+rasters_cat_list <- lapply(tif_files_categoric, rast)
 
 # Assign EPSG:2056 (the CRS are rasters should already be in)
 rasters_num_list <- lapply(rasters_num_list, function(r) {
@@ -38,25 +38,39 @@ rasters_cat_list <- lapply(rasters_cat_list, function(r) {
   return(r)
 })
 
-# Pick a raster with smallest resolution 
-ref_raster <- rasters_num_list[[which.min(sapply(rasters_num_list, function(r) prod(res(r))))]]
-ref_raster
+# Pick agricultural raster as reference
+areable_land_raster <- terra::rast("../data/zh_arable_land_s3.tif")
+crs(areable_land_raster)  <- "epsg:2056"
+ref_raster <- areable_land_raster
 
-rasters_aligned_num <- lapply(rasters_num_list, function(r) {
-  # Reproject to match CRS
-  r_proj <- project(r, ref_raster)
+resample_dynamic <- function(r, ref_raster) {
+  res_original <- res(r)
+  avg_res <- mean(res_original)  # or use max/min depending on your rule
+
+  # Define threshold logic
+  if (avg_res <= 5) {
+    method <- "average"
+  } else {
+    method <- "bilinear"
+  }
+
+  r_resampled <- resample(r, ref_raster, method = method)
   
-  # Resample to match resolution and extent
-  r_resampled <- resample(r_proj, ref_raster, method = "bilinear")
+  # Save to disk to avoid memory overflow
+  out_path <- file.path(paste0("../data/resampled_tiffs/", names(r), "_resampled.tif"))
+  writeRaster(r_resampled, out_path, overwrite = TRUE)
+
+  # Load back from disk (lightweight in memory)
+  rast(out_path)
   return(r_resampled)
-})
+}
+
+# Apply to numeric rasters
+rasters_aligned_num <- lapply(rasters_num_list, resample_dynamic, ref_raster)
 
 rasters_aligned_cat <- lapply(rasters_cat_list, function(r) {
-  # Reproject to match CRS
-  r_proj <- project(r, ref_raster)
-  
   # Resample to match resolution and extent
-  r_resampled <- resample(r_proj, ref_raster, method = "near")
+  r_resampled <- resample(r, ref_raster, method = "near")
   return(r_resampled)
 })
 
@@ -69,35 +83,53 @@ stacked_rasters <- rast(all_rasters)
 # Extract base names without extension
 layer_names <- c(
   tools::file_path_sans_ext(basename(tif_files_numeric)),
-  tools::file_path_sans_ext(basename(tif_files_cetegoric))
+  tools::file_path_sans_ext(basename(tif_files_categoric))
 )
 
 names(stacked_rasters) <- layer_names
+
+writeRaster(stacked_rasters, "../data/resampled_tiffs/stacked_raster.tif")
 ```
+
+
 ```{r arable_land}
-# Subset the points to only arable land
+# load things in again
+stacked_rasters <- rast("../data/resampled_tiffs/stacked_raster.tif")
 areable_land_raster <- terra::rast("../data/zh_arable_land_s3.tif")
 crs(areable_land_raster)  <- "epsg:2056"
 
-# Ensure it's aligned with the stacked raster *(same resolution)
-areable_land_raster_resampled <- resample(areable_land_raster, stacked_rasters, method = "near")
+# Filter only cells in arable land
+# Mask the full raster stack where there is no arable_land 
+areable_land_raster <- classify(areable_land_raster, cbind(NA, 0)) # convert NA to 0
+masked_rasters <- mask(stacked_rasters, areable_land_raster, maskvalue = 0, updatevalue = -999) # by default updatevalue is set to NA, but then we cannot distinguish true NA from non arable land
 
-# Mask the full raster stack where arable_land exists
-masked_rasters <- mask(stacked_rasters, areable_land_raster_resampled, maskvalue = 0) 
+# Convert into a dataframe
+df_arable <- as.data.frame(masked_rasters, xy = TRUE, na.rm = FALSE)|>
+  filter(asp_eness100m != -999) # filter out non arable land
 
-df_arable <- as.data.frame(masked_rasters, xy = TRUE, na.rm = TRUE)
+nrow(df_arable)
 ```
+
 ```{r}
- write.csv(df_arable, file = '../data/prepared_data/arable_land_raster_no_processing.csv', row.names=FALSE)
+ write.csv(df_arable, file = '../data/prepared_data/map_data_ref_arable_no_preprocessing.csv', row.names=FALSE)
 ```
+
 
 # Prepare the soil covariates
 
 ```{r}
-df_arable <- read.csv(file='../data/prepared_data/arable_land_raster_no_processing.csv')
+df_arable <- read.csv(file='../data/prepared_data/map_data_ref_arable_no_preprocessing.csv') # 20 by 20
 df_arable
 ```
 
+## Missing data
+```{r check_missing}
+missing_df <- df_arable[!complete.cases(df_arable), ]%>%
+  dplyr::select(where(~ anyNA(.)) | c(x, y))
+# There is a lot of missing data
+
+plot_pattern(missing_df, rotate = TRUE)
+```
 
 ```{r missing_data}
 # Impute the missing data in variables that needed it before 
@@ -107,80 +139,104 @@ df_arable <- df_arable|>
          gwleiter = ifelse(is.na(gwleiter), 0, gwleiter),
          feucht_wild =  ifelse(is.na(feucht_wild), 0, feucht_wild), 
           bedgwleiter  = ifelse(is.na(bedgwleiter), 0, bedgwleiter))
+```
 
+
+```{r}
 # impute drainfor
-
-points_sf <- df_arable |>
+points_missing_drainfor <- missing_df |>
+  filter(is.na(drainfor))|>
+  dplyr::select(x,y,drainfor)|>
     st_as_sf(coords = c("x", "y"), crs = 2056)
 
 #raster file
-raster_file <- "../data/covariates/numeric/drainfor.tif"
-raster_file <- terra::rast(raster_file)
-crs(raster_file) <- "epsg:2056"
+r_drainfor <- terra::rast("../data/covariates/numeric/drainfor.tif")
+crs(r_drainfor) <- "EPSG:2056"
 
-# Extract raster values at points
-point_vals <- terra::extract(raster_file, points_sf)
+# Get all non-NA raster cell indices and their values
+r_vals <- values(r_drainfor)
+non_na_cells <- which(!is.na(r_vals))
+non_na_coords <- terra::xyFromCell(r_drainfor, non_na_cells)
+non_na_values <- r_vals[non_na_cells]
 
-# Identify missing indices
-missing_idx <- which(is.na(point_vals[[2]]))  # assuming second column holds the raster value
+# Get coordinates of missing points (already an sf object)
+missing_coords <- st_coordinates(points_missing_drainfor)
 
-# Get non-NA raster cells and their coordinates
-non_na_cells <- which(!is.na(values(raster_file)))
-non_na_coords <- xyFromCell(raster_file, non_na_cells)
-non_na_values <- values(raster_file)[non_na_cells]
+# Find nearest non-NA raster cell for each missing point
+nn <- get.knnx(non_na_coords, missing_coords, k = 1)
 
-# Initialize imputed values vector
-imputed_values <- point_vals[[2]]
+# Impute values
+points_missing_drainfor$drainfor <- non_na_values[nn$nn.index[,1]]
 
-for (i in missing_idx) {
-  # Get point coordinates
-  pt_coord <- st_coordinates(points_sf[i, ])
-  
-  # Compute distances to non-NA cells
-  dists <- sqrt((non_na_coords[,1] - pt_coord[1])^2 + (non_na_coords[,2] - pt_coord[2])^2)
-  
-  # Filter by radius (≤ 1000 units)
-  within_radius_idx <- which(dists <= 1000)
-  
-  if (length(within_radius_idx) > 0) {
-    # Impute using median of values within radius
-    imputed_values[i] <- median(non_na_values[within_radius_idx], na.rm = TRUE)
-  } else {
-    # Optional: if no neighbor within radius, leave as NA or use closest
-    closest_idx <- which.min(dists)
-    imputed_values[i] <- non_na_values[closest_idx]
-  }
-}
+#Drop geometry
+imputed_df <- points_missing_drainfor %>%
+  mutate(x = st_coordinates(.)[,1],
+         y = st_coordinates(.)[,2]) %>%
+  st_drop_geometry() %>%
+  select(x, y, drainfor)  # only keep relevant columns
 
-# Add imputed values to points
-points_sf$imputed_raster_value <- imputed_values
-
-# Add the imputed values to original column
-points_sf <- points_sf|>
-  mutate(drainfor = ifelse(is.na(drainfor), imputed_raster_value, drainfor))|>
-  dplyr::select(!c("imputed_raster_value"))
-
-no_geometry <- points_sf %>%
-  st_drop_geometry()
-
-df_arable_processed <- cbind(no_geometry, data.frame(st_coordinates(points_sf[,1])))
+# Join imputed values back into original dataframe
+df_arable_imputed <- df_arable %>%
+  left_join(imputed_df, by = c("x", "y"), suffix = c("", "_imputed")) %>%
+  mutate(drainfor = ifelse(is.na(drainfor), drainfor_imputed, drainfor)) %>%
+  select(-drainfor_imputed)
 ```
 
-```{r check_missing}
-df_arable_processed %>%
-  dplyr::select(where(~ anyNA(.)))
-# There is no more missing data
+
+```{r}
+
+# Checking what might be happening with remaining missing data:
+missing_df_spatial <- missing_df|>
+  st_as_sf(coords = c("x", "y"), crs = 2056)  
+
+ggplot() +
+  geom_sf(data = missing_df_spatial, aes(color = is.na(morriss), alpha = 0.3)) 
+
+ggplot() +
+  geom_sf(data = missing_df_spatial, aes(color = is.na(zh_gwn25_vdist), alpha = 0.3)) 
+
+
+ggplot() +
+  geom_sf(data = missing_df_spatial, aes(color = is.na(te6190avgty), alpha = 0.3)) 
+
+ggplot() +
+  geom_sf(data = missing_df_spatial, aes(color = is.na(geoform_fil), alpha = 0.3)) 
+
+ggplot() +
+  geom_sf(data = missing_df_spatial, aes(color = is.na(caco3), alpha = 0.3)) 
+# seems quite randomly missing
+
+ggplot() +
+  geom_sf(data = missing_df_spatial, aes(color = is.na(drain), alpha = 0.3)) 
+# the raster is smaller than arable land
+
+```
+
+```{r extract_complete_cases}
+# Decision: remove the remaining missing data
+ df_arable_complete <- df_arable[complete.cases(df_arable), ]
+```
+
+```{r}
+ write.csv(df_arable_complete, file = '../data/prepared_data/map_data_ref_arable_complete.csv', row.names=FALSE)
+```
+
+## Convert variable type
+
+```{r}
+df_arable_complete <- read.csv(file='../data/prepared_data/map_data_ref_arable_complete.csv') # 20 by 20
+df_arable_complete
 ```
 
 ```{r}
 # set categoric variables as factors
-df_arable_processed <- df_arable_processed %>%
+df_arable_processed <- df_arable_complete %>%
   mutate(across(75:89, as.factor))
 
 df_arable_processed
 ```
-# Add remaining covariates 
 
+## Add remaining covariates 
 ```{r OBCs}
 # creating the oblique geographic coordinates based on a raster
 
@@ -191,7 +247,7 @@ ogcs
 
 # add the OBCs to dataframe
 points_for_rotation <- df_arable_processed|>
-  vect(geom = c("X", "Y"), crs = "EPSG:2056")
+  vect(geom = c("x", "y"), crs = "EPSG:2056")
 
 df_arable_with_OBCs <- extract(ogcs, points_for_rotation, bind = TRUE)
 df_arable_with_OBCs_values <- values(df_arable_with_OBCs)
@@ -235,6 +291,17 @@ df_depth_60_scaled <- df_depth_60 %>%
   mutate(across(all_of(vars_to_scale), ~ (. - means[cur_column()]) / sds[cur_column()]))
 ```
 
+
+```{r}
+# save the current data, since next step can fail 
+ write.csv(df_depth_10_scaled, file = '../data/prepared_data/map_data_depth_10_no_one_hot.csv', row.names=FALSE)
+ write.csv(df_depth_60_scaled, file = '../data/prepared_data/map_data_depth_60_no_one_hot.csv', row.names=FALSE)
+```
+
+```{r}
+df_depth_10_scaled <- read.csv(file='../data/prepared_data/map_data_depth_10_no_one_hot.csv') 
+df_depth_60_scaled <- read.csv(file='../data/prepared_data/map_data_depth_60_no_one_hot.csv') 
+```
 
 ```{r one_hot_encode}
 recipe_obj <- recipe(~ ., data = df_depth_10_scaled) %>%
