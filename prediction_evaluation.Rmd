@@ -326,25 +326,7 @@ analyze_output(overfit_df, outcome = "pH")
 analyze_output(overfit_df, outcome = "lime")
 ```
 
-In univariate pH: 
-Based on metrics - all models are similar to baseline, with dropout having the best performance. 
-Based on scatterplot: Inclusion of regularization prevents the model from predicting higher pH when that is adequate. The graph of with dropout and without look similar.
-Based on residual scatterplot: Again, we see a strong cut of when reguralization is used. Use of dropout leads to more negative residuals in the lower pH.
-Based on histogram comparison: No dropout leads to the closest replication of the distribution in validation data. Use of dropout leads to prediction of more small pH (which is underrepresented in this sample). Also, again, regularization leads to no really high pH - which is in the sample. 
-
-In univariate lime: 
-Based on metrics: Inclusion of dropout - slight improvement of RMSE in this sample, reg makes it a little bit worse. MAE is worse with any measure - this indicates that with dropout there is less really big errors, but the average error is larger. The measures make the prediction of zero lime worse, but the non-zero lime gets better. 
-Based on scatterplots: All models very strongly underestimate a lot of the higher lime values.
-Based on residual scatterplot: All models show the trend of overestimating small lime values and underestimating large ones. 
-Based on barplot residuals: More positive residuals than negative.
-Based on histogram comparison: Very clearly no dropout leads to a better estimation of the smaller values. 
-
-Multivariate model:
-Matrics: Inclusion of any method reduces performance of pH, but the RMSE of lime is improved. Reguralization and dropout lead to a lower RMSE and MAE. 
-Based on scatterplot: Dropout lead to a flatter prediction of pH and lime (there is virtually no trend). I suspect that the bad RMSE score of no methods model stems from the bad prediction of the 3 extreme values, because otherwise it looks better than the dropout model. 
-Based on histogram comparison: the models with no methods looks better on both. 
-
-Conclusion: no to dropout. 
+The inclusion of non-overfitting measures improves the accuracy of pH prediction for the univariate and multivariate model, but makes the accuracy of lime models worse. But in reality it just means pH is being predicted over a smaller range for dropout and reg. Additionally, the history plots show worse or not improved validation error. Therefore, none of these are implemented. 
 
 
 # Zero-inflated mse
