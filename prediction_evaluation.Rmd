@@ -529,7 +529,7 @@ df_best_models$model<- factor(df_best_models$model, levels =c("Observed values",
 ```
 
 
-```{r f_histogram_consistency}
+```{r f_histogram_consistency, fig.width = 7, fig.height=3}
 histogram_lime_below_65 <- function(model_df){
    plot <- model_df|>
     filter(pH < 6.5)|>
@@ -538,13 +538,13 @@ histogram_lime_below_65 <- function(model_df){
      facet_wrap(~model)+
      theme_minimal()+
        labs(
-    x ="Lime content"
-  ) 
+    x ="Lime content") +
+     scale_y_continuous(trans='log2')
    return(plot)
 }
 ```
 
-```{r f_infared_lime_pH_relationship}
+```{r f_infared_lime_pH_relationship, fig.width = 7, fig.height=3}
 predicted_against_predicted <- function(model_df){
    plot <- model_df|>
     mutate(low_pH = ifelse(pH < 6.5, TRUE, FALSE))|>
@@ -553,7 +553,8 @@ predicted_against_predicted <- function(model_df){
      facet_wrap(~model)+
      theme_minimal()+
        labs(
-    y = "Lime content"
+    y = "Lime content",
+    colour = "pH < 6.5"
   ) 
    return(plot)
 }
