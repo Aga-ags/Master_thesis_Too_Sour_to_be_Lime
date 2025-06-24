@@ -10,7 +10,7 @@ library(tidyverse)
 library(terra)
 library(sf)
 library(ggmice)
-library(obliquer)
+#library(obliquer)
 library(recipes)
 library(FNN)
 ```
@@ -229,9 +229,12 @@ df_arable_complete
 ```
 
 ```{r}
-# set categoric variables as factors
-df_arable_processed <- df_arable_complete %>%
-  mutate(across(75:89, as.factor))
+df_arable_processed <- df_arable_complete |>
+  mutate(across(75:90, as.factor))|> # CHECK
+  mutate(bedgwleiter = as.numeric(bedgwleiter), # these were incorrectly processed in the data preparing code before
+         feucht_wild = as.numeric(feucht_wild),
+         gwleiter = as.numeric(gwleiter),
+         skfeucht= as.numeric(skfeucht))
 
 df_arable_processed
 ```
@@ -292,16 +295,6 @@ df_depth_60_scaled <- df_depth_60 %>%
 ```
 
 
-```{r}
-# save the current data, since next step can fail 
- write.csv(df_depth_10_scaled, file = '../data/prepared_data/map_data_depth_10_no_one_hot.csv', row.names=FALSE)
- write.csv(df_depth_60_scaled, file = '../data/prepared_data/map_data_depth_60_no_one_hot.csv', row.names=FALSE)
-```
-
-```{r}
-df_depth_10_scaled <- read.csv(file='../data/prepared_data/map_data_depth_10_no_one_hot.csv') 
-df_depth_60_scaled <- read.csv(file='../data/prepared_data/map_data_depth_60_no_one_hot.csv') 
-```
 
 ```{r one_hot_encode}
 recipe_obj <- recipe(~ ., data = df_depth_10_scaled) %>%
@@ -320,17 +313,61 @@ one_hot_df_60
 ```
 
 
+
 ```{r remove_irelevant_var}
-# remove id, X, Y
-
-# reorder correctly
-df_reordered <- df_to_reorder %>%
-  select(all_of(names(reference_df)))
-
-# transform into matrix
+# Store x,y to join predictions with
+coordinates <- one_hot_df_10|>
+  dplyr::select (x, y)
+# remove x.y to create prediction dfs 
+x_map_10 <- one_hot_df_10|>
+  dplyr::select (!c(x, y))
+x_map_60 <- one_hot_df_60|>
+  dplyr::select (!c(x, y))
 ```
 
-```{r save_ready_matrix}
 
+```{r compare_columns}
+# compare columns in the x that models are trained on
+x_test <- read.csv(file='../data/prepared_data/x_test.csv') 
+x_test
+
+# see if there is any columns missing (this is identical for 10 and 60)
+setdiff(colnames(x_test),colnames(x_map_10)) # no additional columns in x_test that are not already in x_map
+set_diff_extra_map <- setdiff(colnames(x_map_10),colnames(x_test)) # columns missing from x_test (all categorical, therefore, model does not know what to do with them. they need to be removed)]
+set_diff_extra_map
+
+# Remove rows with impossible values and columns that don't exist in training data
+x_map_filtered_10 <- x_map_10|>
+  filter(across(set_diff_extra_map, ~ .!=1))|>
+  dplyr::select(!set_diff_extra_map)
+x_map_filtered_10  
+x_map_filtered_60 <- x_map_60|>
+  filter(across(set_diff_extra_map, ~ .!=1))|>
+  dplyr::select(!set_diff_extra_map)
+
+
+setdiff(colnames(x_map_filtered_10),colnames(x_test))
+
+# reorder correctly
+x_map_subset_10<-x_map_filtered_10[names(x_test)]
+x_map_subset_10
+x_map_subset_60<-x_map_filtered_60[names(x_test)]
+x_map_subset_60
+```
+
+
+
+```{r ready_matrix}
+# transform into matrix
+x_map_matrix_10 <- x_map_subset_10|>
+  as.matrix()
+x_map_matrix_60 <- x_map_subset_60|>
+  as.matrix()
+```
+
+```{r save_df}
+ write.csv(x_map_matrix_10, file = '../data/prepared_data/x_map_10.csv', row.names=FALSE)
+ write.csv(x_map_matrix_60, file = '../data/prepared_data/x_map_60.csv', row.names=FALSE)
+ write.csv(x_map_matrix, file = '../data/prepared_data/coordinates_map.csv', row.names=FALSE)
 ```
 
