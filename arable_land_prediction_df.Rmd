@@ -10,7 +10,7 @@ library(tidyverse)
 library(terra)
 library(sf)
 library(ggmice)
-#library(obliquer)
+library(obliquer)
 library(recipes)
 library(FNN)
 ```
@@ -230,7 +230,7 @@ df_arable_complete
 
 ```{r}
 df_arable_processed <- df_arable_complete |>
-  mutate(across(75:90, as.factor))|> # CHECK
+  mutate(across(77:91, as.factor))|> 
   mutate(bedgwleiter = as.numeric(bedgwleiter), # these were incorrectly processed in the data preparing code before
          feucht_wild = as.numeric(feucht_wild),
          gwleiter = as.numeric(gwleiter),
@@ -248,7 +248,7 @@ crs(my_cov) <- "EPSG:2056"
 ogcs <- obliquify(my_cov, 10) #drastic increase in prediction performance stopped around here for most models
 ogcs
 
-# add the OBCs to dataframe
+# add the OBCs to dataframe  
 points_for_rotation <- df_arable_processed|>
   vect(geom = c("x", "y"), crs = "EPSG:2056")
 
@@ -314,16 +314,6 @@ one_hot_df_60
 
 
 
-```{r remove_irelevant_var}
-# Store x,y to join predictions with
-coordinates <- one_hot_df_10|>
-  dplyr::select (x, y)
-# remove x.y to create prediction dfs 
-x_map_10 <- one_hot_df_10|>
-  dplyr::select (!c(x, y))
-x_map_60 <- one_hot_df_60|>
-  dplyr::select (!c(x, y))
-```
 
 
 ```{r compare_columns}
@@ -331,17 +321,20 @@ x_map_60 <- one_hot_df_60|>
 x_test <- read.csv(file='../data/prepared_data/x_test.csv') 
 x_test
 
+x_map_predictiors <- one_hot_df_10|>
+  dplyr::select (!c(x, y))
+
 # see if there is any columns missing (this is identical for 10 and 60)
-setdiff(colnames(x_test),colnames(x_map_10)) # no additional columns in x_test that are not already in x_map
-set_diff_extra_map <- setdiff(colnames(x_map_10),colnames(x_test)) # columns missing from x_test (all categorical, therefore, model does not know what to do with them. they need to be removed)]
+setdiff(colnames(x_test),colnames(x_map_predictiors)) # no additional columns in x_test that are not already in x_map
+set_diff_extra_map <- setdiff(colnames(x_map_predictiors),colnames(x_test)) # columns missing from x_test (all categorical, therefore, model does not know what to do with them. they need to be removed)]
 set_diff_extra_map
 
 # Remove rows with impossible values and columns that don't exist in training data
-x_map_filtered_10 <- x_map_10|>
+x_map_filtered_10 <- one_hot_df_10|>
   filter(across(set_diff_extra_map, ~ .!=1))|>
   dplyr::select(!set_diff_extra_map)
 x_map_filtered_10  
-x_map_filtered_60 <- x_map_60|>
+x_map_filtered_60 <- one_hot_df_60|>
   filter(across(set_diff_extra_map, ~ .!=1))|>
   dplyr::select(!set_diff_extra_map)
 
@@ -349,25 +342,85 @@ x_map_filtered_60 <- x_map_60|>
 setdiff(colnames(x_map_filtered_10),colnames(x_test))
 
 # reorder correctly
-x_map_subset_10<-x_map_filtered_10[names(x_test)]
+col_order <- append(names(x_test), "x")|>
+  append("y")
+x_map_subset_10<-x_map_filtered_10[col_order]
 x_map_subset_10
-x_map_subset_60<-x_map_filtered_60[names(x_test)]
+x_map_subset_60<-x_map_filtered_60[col_order]
 x_map_subset_60
 ```
 
-
-
-```{r ready_matrix}
-# transform into matrix
-x_map_matrix_10 <- x_map_subset_10|>
+```{r remove_irelevant_var}
+# Store x,y to join predictions with
+coordinates <- x_map_subset_10|>
+  dplyr::select (x, y)
+# remove x.y to create prediction dfs 
+x_map_10 <- x_map_subset_10|>
+  dplyr::select (!c(x, y))|>
   as.matrix()
-x_map_matrix_60 <- x_map_subset_60|>
+x_map_60 <- x_map_subset_60|>
+  dplyr::select (!c(x, y))|>
   as.matrix()
 ```
 
+
 ```{r save_df}
- write.csv(x_map_matrix_10, file = '../data/prepared_data/x_map_10.csv', row.names=FALSE)
- write.csv(x_map_matrix_60, file = '../data/prepared_data/x_map_60.csv', row.names=FALSE)
- write.csv(x_map_matrix, file = '../data/prepared_data/coordinates_map.csv', row.names=FALSE)
+ write.csv(x_map_10, file = '../data/prepared_data/x_map_10.csv', row.names=FALSE)
+ write.csv(x_map_60, file = '../data/prepared_data/x_map_60.csv', row.names=FALSE)
+
+```
+
+```{r}
+ write.csv(coordinates, file = '../data/prepared_data/coordinates_map.csv', row.names=FALSE)
+```
+
+
+# Process results 
+
+```{r}
+df_pred_10 <- read.csv(file='./tuning_results//predictions_map_10.csv')
+df_pred_10
+```
+
+```{r}
+library(dplyr)
+library(stringr)
+library(rlang)
+
+# make univariate ph and lime together
+names(df_pred_10) <- names(df_pred_10) %>%
+  str_replace("^pH_no_lime_imputation_from_3_5_classes$", "univariate.pH") %>%
+  str_replace("^lime_no_lime_imputation_from_3_5_classes$", "univariate.lime")
+
+# Assuming df is your dataframe
+model_names <- unique(str_extract(names(df_pred_10), "^[^\\.]+"))  # extract names before the dot
+model_names
+
+# Remove possible NA values and only keep models that have both pH and lime
+model_names <- model_names[!is.na(model_names)]
+model_names <- model_names[sapply(model_names, function(m) {
+  all(c(paste0(m, ".pH"), paste0(m, ".lime")) %in% names(df_pred_10))
+})]
+model_names
+
+# Loop through models and create new columns
+for (m in model_names) {
+  pH_col <- paste0(m, ".pH")
+  lime_col <- paste0(m, ".lime")
+  new_col <- paste0(m, ".lime_applied")
+  
+  df_pred_10[[new_col]] <- ifelse(df_pred_10[[pH_col]] < 6.5, df_pred_10[[lime_col]], 0)
+}
+
+df_pred_10
+```
+```{r}
+library(terra)
+
+# 1. Convert dataframe to SpatRaster
+r <- rast(df_pred_10, type = "xyz", crs = "EPSG:2056" )
+
+out_path <- file.path(paste0("../data/prediction_map_raster.tif"))
+writeRaster(r, out_path, overwrite = TRUE)
 ```
 

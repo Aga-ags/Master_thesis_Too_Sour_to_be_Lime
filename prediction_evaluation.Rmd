@@ -7,8 +7,9 @@ output: html_document
 
 ```{r}
 library(tidyverse)
-library(rlang)
 library(xtable) # export tables to LaTeX
+library(forcats) # revalue factors
+library(rlang)
 ```
 
 
@@ -157,7 +158,7 @@ extract_best_model <- function(file_name, best_model_name, rename_to, df_to_join
   
   df <- df |>
     dplyr::select(id, ph_col, lime_col)|>
-    rename(pH = ph_col, 
+    dplyr::rename(pH = ph_col, 
            lime = lime_col)|>
     # de-scale the predicted values
     mutate(pH = (pH * ph_std) + ph_mean,
@@ -211,29 +212,7 @@ mse_of_rule_points_negative_incorrect <- function(model_df){
 }
 ```
 
-```{r f_histogram_consistency}
-histogram_lime_below_65 <- function(model_df){
-   plot <- model_df|>
-    filter(pH < 6.5)|>
-     ggplot(aes(x = lime))+
-     geom_histogram()+
-     facet_wrap(~model)+
-     theme_minimal()
-   return(plot)
-}
-```
 
-```{r f_infared_lime_pH_relationship}
-predicted_against_predicted <- function(model_df){
-   plot <- model_df|>
-    mutate(low_pH = ifelse(pH < 6.5, TRUE, FALSE))|>
-     ggplot(aes(x = pH, y = lime, colour = low_pH))+
-     geom_point()+
-     facet_wrap(~model)+
-     theme_minimal()
-   return(plot)
-}
-```
 
 # Choice of imputation strategy and weights inclusion
 ```{r load_imp_data}
@@ -345,8 +324,9 @@ lambda_df <- read.csv(file="./tuning_results/lambda_parameter_tuning.csv")|>
   pivot_to_pred_model()
 lambda_df
 analyze_output(lambda_df, outcome = "lime")
+analyze_output(lambda_df, outcome = "pH")
 ```
-Best perfomance: lanbda 0.001, then, 0.5
+Best perfomance: lanbda 0.001 (no real change in graphs), then, 0.5 - we can see a split in observed vs predicted 
 
 ```{r }
 # Transform the models into the format for consistency evaluation 
@@ -402,7 +382,190 @@ Again: 0.001 then 0.5 perform best
 
 
 
-# Evaluation of consistency of best models
+# Evaluation of best models
+```{r}
+best_models <- read.csv(file="./tuning_results/test_predictions_best_models.csv")|>
+  pivot_to_pred_model()
+
+scaling_parameters <- read.csv(file= "scaling_parameters.csv")
+
+ph_mean <- scaling_parameters$mean[scaling_parameters$variable=="pH"]
+ph_std <- scaling_parameters$sd[scaling_parameters$variable=="pH"]
+lime_mean <- scaling_parameters$mean[scaling_parameters$variable=="lime"]
+lime_std <- scaling_parameters$sd[scaling_parameters$variable=="lime"]
+
+
+best_models <- best_models|>
+  mutate(value = ifelse(predicted == "pH",
+                        (value * ph_std) + ph_mean,
+                        (value * lime_std) + lime_mean),
+         pH = (pH * ph_std) + ph_mean,
+         lime = (lime * lime_std) + lime_mean,
+         model = as.factor(model))
+best_models$model <-  revalue(best_models$model, c("pH_no_lime_imputation_from_3_5_classes" = "Univariate pH", "lime_no_lime_imputation_from_3_5_classes" = "Univariate lime", "both_no_lime_imputation_from_3_5_classes" = "Multivariate", "both_no_3_5_classes_penatly_05_correction1" = "Informed Multivariate"))
+
+best_models$model<- ordered(best_models$model, levels =c("Univariate pH", "Univariate lime", "Multivariate", "Informed Multivariate"))
+
+best_models
+```
+```{r}
+metrics_by_model <-function(df_long, outcome){
+  observed_col <- sym(outcome)
+  
+  df_long %>%
+    filter(predicted == outcome)|>
+    group_by(model) %>%
+    summarise(
+      RMSE = sqrt(mean((!!observed_col - value)^2)),
+      MAE  = mean(abs(!!observed_col - value)),
+      MBE = mean(value - !!observed_col),
+             
+      `MSE zero values` = {
+        y_true <- pull(cur_data(), !!observed_col)
+        y_pred <- pull(cur_data(), value)
+        if (sum(y_true + 0 < 0.0001, na.rm = TRUE) > 0) { # Zero values are not 0, because lime is standardized. Equivalent value of - 0.5062935 is used, however, due to rounding errors a equality is substituted to < with 0.0001 tolarance
+          mean((y_pred[y_true + 0 < 0.0001] - y_true[y_true + 0 < 0.0001])^2, na.rm = TRUE)
+        } else {
+          0
+        }
+      },
+      
+      `MSE non-zero values` = {
+        y_true <- pull(cur_data(), !!observed_col)
+        y_pred <- pull(cur_data(), value)
+        if (sum(y_true > (0 + 0.0001), na.rm = TRUE) > 0) { # similar situation with standarization and rounding error
+          mean((y_pred[y_true > (0 + 0.0001)] - y_true[y_true > (0 + 0.0001)])^2, na.rm = TRUE)
+        } else {
+          0
+        }
+      },
+      
+      `Zero-inflated MSE` = (`MSE zero values` + `MSE non-zero values`) / 2
+    )|>
+    print(n = nrow(.))
+}
+```
+
+```{r}
+metrics_by_model(best_models, outcome = "pH")
+metrics_by_model(best_models, outcome = "lime")
+```
+
+```{r plots_for_poster_ 1, fig.width = 8, fig.height=3}
+plot_observed_predicted <-function(df_long, outcome){
+  plot <- df_long |>
+    filter(predicted == outcome)|>
+    ggplot(aes(x = !!sym(outcome), y = value)) +
+  geom_point(alpha = 0.3) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  facet_wrap(~ model) +
+  labs(
+    x = paste("Observed", outcome),
+    y = paste("Predicted", outcome)
+  ) +
+  theme_minimal()
+  
+  return(plot)
+}
+
+plot_observed_predicted(best_models, outcome = "pH")
+ggsave(file = "../Figures/hist_pH_poster.png")
+plot_observed_predicted(best_models, outcome = "lime")
+ggsave(file = "../Figures/hist_lime_poster.png")
+```
+```{r}
+# Prepare parameters for de-scaling pH and lime content
+scaling_parameters <- read.csv(file= "scaling_parameters.csv")
+
+ph_mean <- scaling_parameters$mean[scaling_parameters$variable=="pH"]
+ph_std <- scaling_parameters$sd[scaling_parameters$variable=="pH"]
+lime_mean <- scaling_parameters$mean[scaling_parameters$variable=="lime"]
+lime_std <- scaling_parameters$sd[scaling_parameters$variable=="lime"]
+
+# Create base dataframe with observed values to join with
+df_best_models <- read.csv(file= "../data/prepared_data/y_test.csv")|>
+  dplyr::select(pH, lime) |>
+  mutate(pH = (pH * ph_std) + ph_mean,
+         lime = (lime * lime_std) + lime_mean,
+         model = "Observed values")
+# add index to later join by
+df_best_models$id <- seq.int(nrow(df_best_models))
+
+
+
+extract_best_model_univariate <- function(file_name, best_model_name_ph, best_model_name_lime, rename_to, df_to_join){
+  ph_col <- paste0(best_model_name_ph, ".pH")
+  lime_col <- paste0(best_model_name_lime, ".lime")
+  
+  df <-  read.csv(file= paste0("./tuning_results/", file_name, ".csv"))
+  # add index to later join by
+  df$id <- seq.int(nrow(df))  
+  
+  df_pH <- df |>
+    dplyr::select(id, ph_col)|>
+    dplyr::rename(pH =  !!sym(ph_col))|>
+    # de-scale the predicted values
+    mutate(pH = (pH * ph_std) + ph_mean,
+         model = rename_to)
+  
+  df_lime <- df |>
+    dplyr::select(id, lime_col)|>
+    dplyr::rename(lime = lime_col)|>
+    # de-scale the predicted values
+    mutate(lime = (lime * lime_std) + lime_mean)|>
+    join(df_pH, by = "id")
+  
+  df_to_join <- dplyr::bind_rows(df_to_join, df_lime)
+  return(df_to_join)}
+
+df_best_models <- extract_best_model_univariate("test_predictions_best_models", best_model_name_ph = "pH_no_lime_imputation_from_3_5_classes", best_model_name_lime = "lime_no_lime_imputation_from_3_5_classes", rename_to = "Univariate", df_best_models)
+
+df_best_models <- extract_best_model("test_predictions_best_models", best_model_name = "both_no_lime_imputation_from_3_5_classes", rename_to = "Multivariate",df_best_models)
+
+df_best_models <- extract_best_model("test_predictions_best_models", best_model_name = "both_no_3_5_classes_penatly_05_correction1", rename_to = "Informed Multivariate",df_best_models)
+
+df_best_models$model<- factor(df_best_models$model, levels =c("Observed values", "Univariate", "Multivariate", "Informed Multivariate"))
+
+```
+
+
+```{r f_histogram_consistency}
+histogram_lime_below_65 <- function(model_df){
+   plot <- model_df|>
+    filter(pH < 6.5)|>
+     ggplot(aes(x = lime))+
+     geom_histogram()+
+     facet_wrap(~model)+
+     theme_minimal()+
+       labs(
+    x ="Lime content"
+  ) 
+   return(plot)
+}
+```
+
+```{r f_infared_lime_pH_relationship}
+predicted_against_predicted <- function(model_df){
+   plot <- model_df|>
+    mutate(low_pH = ifelse(pH < 6.5, TRUE, FALSE))|>
+     ggplot(aes(x = pH, y = lime, colour = low_pH))+
+     geom_point(alpha = 0.3)+
+     facet_wrap(~model)+
+     theme_minimal()+
+       labs(
+    y = "Lime content"
+  ) 
+   return(plot)
+}
+```
+
+```{r}
+histogram_lime_below_65(df_best_models)
+ggsave(file = "../Figures/hist_below_65_poster.png")
+predicted_against_predicted(df_best_models)
+ggsave(file = "../Figures/relationship_pH_lime_poster.png")
+```
+
 # Evaluating the consitency at different depths?
 
 
