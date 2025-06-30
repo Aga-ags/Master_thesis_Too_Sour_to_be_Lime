@@ -32,7 +32,6 @@ results_test = y_test
 def custom_relu(x):
     return tf.where(x > - 0.5062935, x, tf.constant(- 0.5062935, dtype=x.dtype))
 
-
 # custom objective for zero - inflation
 def zero_inflated_mse_loss(y_true, y_pred):
     # Due to standarization lime = 0 is now roughly equal to - 0.5062935, which is not a nice intiger to compare to, therefore we set a tolerance level
@@ -62,19 +61,32 @@ def zero_inflated_mse_loss(y_true, y_pred):
 
     return (mse_zero + mse_gt_zero) / 2.0
 
+# def lime_ph_penalty_loss(lambda_penalty=1.0):
+#     def loss(y_true, y_pred):
+#         output_pH = y_pred[:, 0]
+#         output_lime = y_pred[:, 1]
+
+#         # Mask where pH < 6.5
+#         mask = tf.cast(tf.less(output_pH, -0.115569), tf.float32)  # -0.115568 is equvalent to pH 6.5 post standarization
+#         # Compute penalty
+#         masked_lime = output_lime * mask # extract lime values for which predicted pH is below 6.5
+#         mask_sum = tf.reduce_sum(mask) # get number of cases where pH < 6.5 occurs
+#         epsilon = 1e-6
+#         penalty = tf.reduce_sum(tf.abs(masked_lime + 0.5062935)) / (mask_sum + epsilon)
+
+#         return lambda_penalty * penalty
+#     return loss
+
 def lime_ph_penalty_loss(lambda_penalty=1.0):
     def loss(y_true, y_pred):
         output_pH = y_pred[:, 0]
         output_lime = y_pred[:, 1]
 
         # Mask where pH < 6.5
-        mask = tf.cast(tf.less(output_pH, -0.115569), tf.float32)  # 0.115568 is equvalent to pH 6.5 post standarization
-
+        mask = tf.cast(tf.less(output_pH, -0.115569), tf.float32)  # -0.115568 is equvalent to pH 6.5 post standarization
         # Compute penalty
         masked_lime = output_lime * mask # extract lime values for which predicted pH is below 6.5
-        mask_sum = tf.reduce_sum(mask) # get number of cases where pH < 6.5 occurs
-        epsilon = 1e-6
-        penalty = tf.reduce_sum(tf.abs(masked_lime + 0.5062935)) / (mask_sum + epsilon)
+        penalty = tf.reduce_mean(tf.square(masked_lime + 0.5062935))
 
         return lambda_penalty * penalty
     return loss

@@ -341,8 +341,9 @@ ggplot(df_swiss, aes(x = pH_CaCl2_imputed))+
 df_swiss <- df_swiss|>
   filter(pH_CaCl2_imputed < 15)
 
-ggplot(df_swiss, aes(x = pH_CaCl2_imputed, fill = pH_origin))+
-  geom_histogram()
+ggplot(df_swiss, aes(x = pH_CaCl2_imputed))+
+  geom_histogram()+
+  facet_wrap(~pH_origin)
 
 
 ```
@@ -838,10 +839,11 @@ For gwleiter and skfeucht - there are NA values everywhere beyond the aquifers/m
 ```{r imp_skflucht_and_gwleiter}
 # imputing the covariates
 df_soil_with_cov <- df_soil_with_cov|>
-  mutate(skfeucht = ifelse(is.na(skfeucht), 0, skfeucht),
-         gwleiter = ifelse(is.na(gwleiter), 0, gwleiter),
-         feucht_wild =  ifelse(is.na(feucht_wild), 0, feucht_wild), 
-          bedgwleiter  = ifelse(is.na(bedgwleiter), 0, bedgwleiter))
+  mutate(skfeucht = as.factor(ifelse(is.na(skfeucht), "0", skfeucht)),
+         gwleiter = as.factor(ifelse(is.na(gwleiter), "0", gwleiter)),
+         feucht_wild =  as.factor(ifelse(is.na(feucht_wild), "0", feucht_wild)), 
+          bedgwleiter  = as.factor(ifelse(is.na(bedgwleiter), "0", bedgwleiter)))
+df_soil_with_cov
 ```
 
 ```{r imp_drainfor}
@@ -1074,20 +1076,6 @@ write.csv(scaling_params, "scaling_parameters.csv", row.names = FALSE)
 
 ```
 
-```{r}
-ph_mean <- scaling_parameters$mean[scaling_parameters$variable=="pH"]
-ph_std <- scaling_parameters$sd[scaling_parameters$variable=="pH"]
-lime_mean <- scaling_parameters$mean[scaling_parameters$variable=="lime"]
-lime_std <- scaling_parameters$sd[scaling_parameters$variable=="lime"]
-
-ph_mean
-ph_std
-lime_mean
-lime_std
-
-(6.5 - ph_mean) / ph_std
-(0 - lime_mean) / lime_std
-```
 
 
 ```{r}

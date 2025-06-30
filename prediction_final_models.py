@@ -37,7 +37,7 @@ results_test = train.load_model_and_predict(model_name = "both_no_lime_imputatio
                                                   df_to_save_output_to = results_test)
 
 
-results_test = train.load_model_and_predict(model_name = "both_no_3_5_classes_penatly_005", 
+results_test = train.load_model_and_predict(model_name = "both_no_3_5_classes_penatly_001_squared", 
                                                   inputs_prediction = x_test, 
                                                   df_to_save_output_to = results_test)
 
@@ -60,7 +60,7 @@ results_map_10 = train.load_model_and_predict(model_name = "both_no_lime_imputat
                                                   df_to_save_output_to = results_map_10)
 
 
-results_map_10 = train.load_model_and_predict(model_name = "both_no_3_5_classes_penatly_005", 
+results_map_10 = train.load_model_and_predict(model_name = "both_no_3_5_classes_penatly_001_squared", 
                                                   inputs_prediction = x_map_10, 
                                                   df_to_save_output_to = results_map_10)
 
@@ -80,7 +80,7 @@ results_map_60 = train.load_model_and_predict(model_name = "both_no_lime_imputat
                                                   df_to_save_output_to = results_map_60)
 
 
-results_map_60 = train.load_model_and_predict(model_name = "both_no_3_5_classes_penatly_005", 
+results_map_60 = train.load_model_and_predict(model_name = "both_no_3_5_classes_penatly_001_squared", 
                                                   inputs_prediction = x_map_60, 
                                                   df_to_save_output_to = results_map_60)
 

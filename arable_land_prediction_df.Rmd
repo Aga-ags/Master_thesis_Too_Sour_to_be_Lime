@@ -230,11 +230,8 @@ df_arable_complete
 
 ```{r}
 df_arable_processed <- df_arable_complete |>
-  mutate(across(77:91, as.factor))|> 
-  mutate(bedgwleiter = as.numeric(bedgwleiter), # these were incorrectly processed in the data preparing code before
-         feucht_wild = as.numeric(feucht_wild),
-         gwleiter = as.numeric(gwleiter),
-         skfeucht= as.numeric(skfeucht))
+  mutate(across(77:91, as.factor))
+
 
 df_arable_processed
 ```
@@ -332,10 +329,12 @@ set_diff_extra_map
 # Remove rows with impossible values and columns that don't exist in training data
 x_map_filtered_10 <- one_hot_df_10|>
   filter(across(set_diff_extra_map, ~ .!=1))|>
+  mutate(bedgwleiter_X2 = 0)|>
   dplyr::select(!set_diff_extra_map)
 x_map_filtered_10  
 x_map_filtered_60 <- one_hot_df_60|>
   filter(across(set_diff_extra_map, ~ .!=1))|>
+  mutate(bedgwleiter_X2 = 0)|>
   dplyr::select(!set_diff_extra_map)
 
 
@@ -378,7 +377,7 @@ x_map_60 <- x_map_subset_60|>
 # Process results 
 
 ```{r}
-df_pred_10 <- read.csv(file='./tuning_results//predictions_map_10.csv')
+df_pred_10 <- read.csv(file='./tuning_results/predictions_map_10.csv')
 df_pred_10
 ```
 
@@ -387,12 +386,12 @@ library(dplyr)
 library(stringr)
 library(rlang)
 
-# make univariate ph and lime together
-names(df_pred_10) <- names(df_pred_10) %>%
-  str_replace("^pH_no_lime_imputation_from_3_5_classes$", "univariate.pH") %>%
-  str_replace("^lime_no_lime_imputation_from_3_5_classes$", "univariate.lime")
+# make univariate ph and lime named the same
+df_pred_10 <- df_pred_10|>
+  rename(univariate.pH = pH_no_lime_imputation_from_3_5_classes.pH, 
+         univariate.lime = lime_no_lime_imputation_from_3_5_classes.lime)
 
-# Assuming df is your dataframe
+# Extract model names
 model_names <- unique(str_extract(names(df_pred_10), "^[^\\.]+"))  # extract names before the dot
 model_names
 
@@ -403,13 +402,30 @@ model_names <- model_names[sapply(model_names, function(m) {
 })]
 model_names
 
+# load scaling parameters to return to observed units
+scaling_parameters <- read.csv(file= "scaling_parameters.csv")
+
+ph_mean <- scaling_parameters$mean[scaling_parameters$variable=="pH"]
+ph_std <- scaling_parameters$sd[scaling_parameters$variable=="pH"]
+lime_mean <- scaling_parameters$mean[scaling_parameters$variable=="lime"]
+lime_std <- scaling_parameters$sd[scaling_parameters$variable=="lime"]
+
 # Loop through models and create new columns
 for (m in model_names) {
-  pH_col <- paste0(m, ".pH")
-  lime_col <- paste0(m, ".lime")
-  new_col <- paste0(m, ".lime_applied")
+  pH_col_std <- paste0(m, ".pH")
+  lime_col_std <- paste0(m, ".lime")
   
-  df_pred_10[[new_col]] <- ifelse(df_pred_10[[pH_col]] < 6.5, df_pred_10[[lime_col]], 0)
+  # Create de-standardized versions
+  pH_col_orig <- paste0(m, ".pH_orig")
+  lime_col_orig <- paste0(m, ".lime_orig")
+  
+  df_pred_10[[pH_col_orig]] <- df_pred_10[[pH_col_std]] * ph_std + ph_mean
+  df_pred_10[[lime_col_orig]] <- df_pred_10[[lime_col_std]] * lime_std + lime_mean
+  
+  # Now apply lime threshold on original pH
+  rule_broken_extend_col <- paste0(m, ".rule_broken_extend")
+  df_pred_10[[rule_broken_extend_col]] <- ifelse(df_pred_10[[pH_col_orig]] < 6.5, 
+                                           df_pred_10[[lime_col_orig]], 999)
 }
 
 df_pred_10
@@ -417,7 +433,7 @@ df_pred_10
 ```{r}
 library(terra)
 
-# 1. Convert dataframe to SpatRaster
+# Convert dataframe to raster
 r <- rast(df_pred_10, type = "xyz", crs = "EPSG:2056" )
 
 out_path <- file.path(paste0("../data/prediction_map_raster.tif"))

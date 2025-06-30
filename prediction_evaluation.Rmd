@@ -10,6 +10,8 @@ library(tidyverse)
 library(xtable) # export tables to LaTeX
 library(forcats) # revalue factors
 library(rlang)
+library(scales)
+library("ggpubr")
 ```
 
 
@@ -17,20 +19,33 @@ library(rlang)
 ## Functions for evaluating accuracy
 ```{r}
 # Pivot to longer 
+scaling_parameters <- read.csv(file= "scaling_parameters.csv")
+
+ph_mean <- scaling_parameters$mean[scaling_parameters$variable=="pH"]
+ph_std <- scaling_parameters$sd[scaling_parameters$variable=="pH"]
+lime_mean <- scaling_parameters$mean[scaling_parameters$variable=="lime"]
+lime_std <- scaling_parameters$sd[scaling_parameters$variable=="lime"]
+
 pivot_to_pred_model <- function(df){
   df |>
   pivot_longer(
     cols = -c(1:2),
-    #names_pattern = "(pH|lime)_(.*)$",
-    #names_to = c("predicted", "model"))
     names_pattern  =  "^(.*)\\.(pH|lime)$", #final_pH_full_imp.pH
-    names_to = c("model", "predicted"))
+    names_to = c("model", "predicted"))|>
+    mutate(value = ifelse(predicted == "pH",
+                        (value * ph_std) + ph_mean,
+                        (value * lime_std) + lime_mean),
+         pH = (pH * ph_std) + ph_mean,
+         lime = (lime * lime_std) + lime_mean,
+         model = as.factor(model))
 }
+
 
 plot_observed_against_predicted <- function(df){
   
 }
 ```
+
 
 ```{r}
 # Calculate performance metrics
@@ -41,31 +56,31 @@ metrics_by_model <-function(df_long, outcome){
     filter(predicted == outcome)|>
     group_by(model) %>%
     summarise(
-      RMSE = sqrt(mean((!!observed_col - value)^2)),
-      MAE  = mean(abs(!!observed_col - value)),
-      MBE = mean(value - !!observed_col),
+      RMSE = round(sqrt(mean((!!observed_col - value)^2)), digits = 3),
+      MAE  = round(mean(abs(!!observed_col - value)), digits = 3),
+      MBE = round(mean(value - !!observed_col), digits = 3),
              
-      `MSE zero values` = {
+      `RMSE zero values` = {
         y_true <- pull(cur_data(), !!observed_col)
         y_pred <- pull(cur_data(), value)
-        if (sum(y_true + 0.5062935 < 0.0001, na.rm = TRUE) > 0) { # Zero values are not 0, because lime is standardized. Equivalent value of - 0.5062935 is used, however, due to rounding errors a equality is substituted to < with 0.0001 tolarance
-          mean((y_pred[y_true + 0.5062935 < 0.0001] - y_true[y_true + 0.5062935 < 0.0001])^2, na.rm = TRUE)
+        if (sum(y_true < 0.0001, na.rm = TRUE) > 0) { # due to rounding errors a equality is substituted to < with 0.0001 tolerance
+          round(sqrt(mean((y_pred[y_true  < 0.0001] - y_true[y_true  < 0.0001])^2, na.rm = TRUE)), digits = 3)
         } else {
           0
         }
       },
       
-      `MSE non-zero values` = {
+      `RMSE non-zero values` = {
         y_true <- pull(cur_data(), !!observed_col)
         y_pred <- pull(cur_data(), value)
-        if (sum(y_true > (-0.5062935 + 0.0001), na.rm = TRUE) > 0) { # similar situation with standarization and rounding error
-          mean((y_pred[y_true > (-0.5062935 + 0.0001)] - y_true[y_true > (-0.5062935 + 0.0001)])^2, na.rm = TRUE)
+        if (sum(y_true > ( 0.0001), na.rm = TRUE) > 0) { # similar situation with rounding error
+          round(sqrt(mean((y_pred[y_true > ( 0.0001)] - y_true[y_true > (0.0001)])^2, na.rm = TRUE)), digits = 3)
         } else {
           0
         }
       },
       
-      `Zero-inflated MSE` = (`MSE zero values` + `MSE non-zero values`) / 2
+      `Zero-inflated RMSE` = round((`RMSE zero values` + `RMSE non-zero values`) / 2, digits = 3)
     )|>
     print(n = nrow(.))
 }
@@ -76,11 +91,10 @@ plot_observed_predicted <-function(df_long, outcome){
   plot <- df_long |>
     filter(predicted == outcome)|>
     ggplot(aes(x = !!sym(outcome), y = value)) +
-  geom_point() +
+  geom_point( alpha = 0.3) +
   geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
   facet_wrap(~ model) +
   labs(
-    title = paste("Relationship between observed and predicted", outcome, "values"),
     x = paste("Actual", outcome),
     y = paste("Predicted", outcome)
   ) +
@@ -97,7 +111,7 @@ plot_residuals <-function(df_long, outcome){
     mutate(residuals = !!sym(outcome) - value)
   
   res_dist1 <- ggplot(df, aes(x = value, y = residuals)) +
-  geom_point(color = "darkorange2") +
+  geom_point(color = "darkorange2", alpha = 0.3) +
   geom_hline(yintercept = 0, linetype = "dashed") +
   labs(title = paste("Residuals vs Fitted for", outcome), x = "Predicted", y = "Residuals") +
   theme_minimal()+
@@ -109,28 +123,37 @@ plot_residuals <-function(df_long, outcome){
   theme_minimal()+
      facet_wrap(~ model)
   
-  print(res_dist1)
-  print(res_dist2)
+    print(res_dist1)
+   print(res_dist2)
+  return(res_dist1)
 }
 
 
 ```
 
 ```{r compare_output_distributions}
-
-plot_compare_output_distributions <-function(df_long, outcome){
-  df <- df_long|>
-   filter(predicted == outcome)
+plot_compare_output_distributions <- function(df_long, outcome) {
+  df <- df_long |> filter(predicted == outcome)
   
-    predicted_distribution_validation_data <- ggplot(df, aes())+
-    geom_histogram(aes(x = !!sym(outcome)), fill = "black")+
-    geom_histogram(aes(x = value), fill = "red", alpha = 0.7)+
-    labs(title = paste("Distribution of predicted", outcome, "in validation data"), x = "Observed values") +
-  theme_minimal()+
-      facet_wrap(~ model)
-    
+  df_obs <- df |> 
+    mutate(type = "Observed", val = !!sym(outcome))
+  
+  df_pred <- df |> 
+    mutate(type = "Predicted", val = value)
+  
+  df_combined <- bind_rows(df_obs, df_pred)
+  
+  predicted_distribution_validation_data <- ggplot(df_combined, aes(x = val, fill = type)) +
+    geom_histogram(position = "identity", alpha = 0.7, bins = 30) +
+    scale_fill_manual(values = c("Observed" = "black", "Predicted" = "red")) +
+    labs(
+      x = outcome,
+      fill = "Legend"
+    ) +
+    theme_minimal() +
+    facet_wrap(~ model)
+  
   print(predicted_distribution_validation_data)
-  
 }
 ```
 
@@ -168,6 +191,31 @@ extract_best_model <- function(file_name, best_model_name, rename_to, df_to_join
   df_to_join <- dplyr::bind_rows(df_to_join, df)
   return(df_to_join)
 }
+
+extract_best_model_univariate <- function(file_name, best_model_name_ph, best_model_name_lime, rename_to, df_to_join){
+  ph_col <- paste0(best_model_name_ph, ".pH")
+  lime_col <- paste0(best_model_name_lime, ".lime")
+  
+  df <-  read.csv(file= paste0("./tuning_results/", file_name, ".csv"))
+  # add index to later join by
+  df$id <- seq.int(nrow(df))  
+  
+  df_pH <- df |>
+    dplyr::select(id, ph_col)|>
+    dplyr::rename(pH =  !!sym(ph_col))|>
+    # de-scale the predicted values
+    mutate(pH = (pH * ph_std) + ph_mean,
+         model = rename_to)
+  
+  df_lime <- df |>
+    dplyr::select(id, lime_col)|>
+    dplyr::rename(lime = lime_col)|>
+    # de-scale the predicted values
+    mutate(lime = (lime * lime_std) + lime_mean)|>
+    left_join(df_pH, by = "id")
+  
+  df_to_join <- dplyr::bind_rows(df_to_join, df_lime)
+  return(df_to_join)}
 ```
 
 ```{r f_confusion_matrix}
@@ -177,7 +225,7 @@ make_ph_lime_confusion_matrix <- function(df, model_name) {
     filter(model == model_name) %>%
     mutate(
       pH_group = ifelse(pH < 6.5, "<6.5", "≥6.5"),
-      lime_group = ifelse(lime > 0.0001, "lime > 0", ifelse( lime < 0.0001, "lime < 0", "lime = 0") )
+      lime_group = ifelse(lime > 0.0001, "lime > 0", "lime = 0" )
     )
   
   # Create contingency table
@@ -200,33 +248,73 @@ make_ph_lime_confusion_matrix <- function(df, model_name) {
 ```
 
 ```{r f_metrics_consistency}
-mse_of_rule_points_negative_incorrect <- function(model_df){
+metrics_of_rule_points <- function(model_df){
    metrics <- model_df|>
     filter(pH < 6.5)|>
      group_by(model)|>
      summarise(
-      RMSE = sqrt(mean((lime - 0)^2)), # assume actual value is 0
-      MAE  = mean(abs(lime  - 0))
+      RMSE = round(sqrt(mean((lime - 0)^2)), digits = 3), # assume actual value is 0
+      MAE  = round(mean(abs(lime  - 0)), digits = 3)
     )
   return(metrics)
 }
 ```
 
+```{r pred_vs_pred_plot}
+# Plot of predicted lime and pH - showing the inferred relationship between the variables 
+predicted_against_predicted <-function(model_df){
+   plot <- model_df|>
+    mutate(low_pH = ifelse(pH < 6.5, TRUE, FALSE))|>
+     ggplot(aes(x = pH, y = lime, colour = low_pH))+
+     geom_point()+
+     facet_wrap(~model)+
+     theme_minimal()
+  return(plot)
+}
+```
 
+```{r f_histogram_consistency}
+# histogram of predicted lime for values that are predicted below ph 6.5
+histogram_lime_below_65 <- function(model_df){
+   plot <- model_df|>
+    filter(pH < 6.5)|>
+     mutate(lime = lime + 0.1)|>
+     ggplot(aes(x = lime))+
+     geom_histogram(bins = 30)+
+     facet_wrap(~model)+
+     theme_minimal()+
+       labs(
+    x ="Lime content",
+     y ="Count (log)") +
+     scale_y_continuous(trans = pseudo_log_trans(base = 2),
+  breaks = c(2, 8, 32, 128))
+   return(plot)
+}
+```
+
+# Test
+```{r}
+df_test <- read.csv(file="./tuning_results/test2.csv")|>
+  pivot_to_pred_model()
+
+analyze_output(df_test, outcome = "pH")
+analyze_output(df_test, outcome = "lime")
+```
+For models with no imputation and penalty: the penalty does not improve pH prediction (more pH <6.5 is predicted than its there) and for some lime it makes more zero to be predicted. So, the 0 lime, pH < 6.5 are predicted more often, but there is also a lot more 0 lime predicted when not needed and non zero limed predicted when it should be zero...
+
+For models with MSE + lambda: actually makes the preditions for univariate better, but for some reason introducing the penalty makes the prediction of both lime worse for zero... Maybe: the term is linear while the MSE is squared, so it takes away the importance of the MSE while itself having a smaller penatly for larger diviation?
 
 # Choice of imputation strategy and weights inclusion
 ```{r load_imp_data}
+# load models with different imputation strategies 
 df_imp_pH <- read.csv(file="./tuning_results/pH_imputation_scenario_validation.csv")|>
   pivot_to_pred_model()
-df_imp_pH
 
 df_imp_lime <- read.csv(file="./tuning_results/lime_imputation_scenario_validation.csv")|>
   pivot_to_pred_model()
-df_imp_lime
 
 df_imp_both <- read.csv(file="./tuning_results/both_imputation_scenario_validation.csv")|>
   pivot_to_pred_model()
-df_imp_both
 
 # Order the model column to have the same order on all graphs
 df_imp_pH$model <- ordered(df_imp_pH$model, levels =c("pH_no_site_H2O_no_weights", "pH_no_site_no_weights", "pH_full_imp_no_weights", "pH_no_site_H2O", "pH_no_site", "pH_full_imp"))
@@ -262,38 +350,31 @@ df_imp_both$model <- ordered(df_imp_both$model, levels =c(
 ))
 ```
 
-```{r}
-df<- read.csv(file="./tuning_results/example_validation.csv")|>
-  pivot_to_pred_model()
-df|>  analyze_output(outcome = "lime")
-
-  
-
-```
 
 ```{r imp_weights_pH}
 # compare the model perfomance across imputations for univariate pH model:
 analyze_output(df_imp_pH, outcome = "pH")
 ```
+When weights are not included: more imputation leads to a better prediction... But when weights are included the prediction gets worse. But in reality the size of the error differences is quite small (on average prediction being 0.40 vs 0.46). All models struggle with the inflated predicted values for low pH values (below 6.5).
+
 
 ```{r imp_weights_lime}
 # compare the model perfomance across imputations for univariate lime content model:
 analyze_output(df_imp_lime, outcome = "lime")
 ```
-
+Again, the differences in model performance are not large. The biggest diffrences are in the ability of the model to predict zero lime values - here clearly no-imputation from classes 3-5 is the best with and without weights, however, that does come with a cost of a worse non-zero values prediction (particuralyvery high lime values are being predicted as zero). 
 
 ```{r imp_weights_both}
 # compare the model perfomance across imputations for univariate lime content model:
 analyze_output(df_imp_both, outcome = "pH")
 analyze_output(df_imp_both, outcome = "lime")
 ```
+Here: no imputation performs best for pH... but if we look at predicted vs observed it shows almost a flat line - not good. Similar flatness occurs in the full imputation with weights. 
+
 
 Imputation without 3-5 lime site classes was chosen with inclusion of weights. 
 
-```{r}
-xtable(metrics_by_model(df_imp_both, outcome = "pH"), digits = 3)
-xtable(metrics_by_model(df_imp_both, outcome = "lime"), digits = 3)
-```
+
 
 ## Overfitting
 
@@ -305,32 +386,49 @@ analyze_output(overfit_df, outcome = "pH")
 analyze_output(overfit_df, outcome = "lime")
 ```
 
-The inclusion of non-overfitting measures improves the accuracy of pH prediction for the univariate and multivariate model, but makes the accuracy of lime models worse. But in reality it just means pH is being predicted over a smaller range for dropout and reg. Additionally, the history plots show worse or not improved validation error. Therefore, none of these are implemented. 
 
+```{r residuals_best_models, fig.width = 8, fig.height=8}
+a <- plot_residuals(overfit_df, outcome = "pH")
+b <- plot_residuals(overfit_df, outcome = "lime")
 
-# Zero-inflated mse
-```{r}
-overfit_df <- read.csv(file="./tuning_results/zero_mse_parameter_tuning.csv")|>
-  pivot_to_pred_model()
+ggarrange(
+  a, b, labels = c("A", "B"),
+  ncol = 1, nrow = 2
+  )
 
-analyze_output(overfit_df, outcome = "lime")
+ggsave(file = "../Figures/overfitting_residuals.pdf")
+
 ```
-The inclusion of zero-mse leads to this gap in prediction around 0.5  - low values are predicted closer to zero. Generally, it does not seem this is particuraly improving the prediction. 
 
 # Lambda - impact on accuracy and consistency 
 
 ```{r}
-lambda_df <- read.csv(file="./tuning_results/lambda_parameter_tuning.csv")|>
+lambda_df_lin <- read.csv(file="./tuning_results/lambda_parameter_tuning.csv")|>
   pivot_to_pred_model()
-lambda_df
-analyze_output(lambda_df, outcome = "lime")
-analyze_output(lambda_df, outcome = "pH")
+lambda_df_lin
+
+lambda_df_lin$model <-  fct_recode(lambda_df_lin$model,  
+                                   "No penalty" = "both_no_lime_imputation_from_3_5_classes", 
+                                   "Linear penalty, lambda 1" = "both_no_3_5_classes_penatly_1",  
+                                   "Linear penalty, lambda 0.5" = "both_no_3_5_classes_penatly_05", 
+                                   "Linear penalty, lambda 0.1" = "both_no_3_5_classes_penatly_01", 
+                                   "Linear penalty, lambda 0.05" = "both_no_3_5_classes_penatly_005", 
+                                   "Linear penalty, lambda 0.01" = "both_no_3_5_classes_penatly_001", 
+                                   "Linear penalty, lambda 0.005" = "both_no_3_5_classes_penatly_0005", 
+                                   "Linear penalty, lambda 0.001" = "both_no_3_5_classes_penatly_0001")
+
+lambda_df_lin$model <- ordered(lambda_df_lin$model, levels =c("No penalty","Linear penalty, lambda 1", "Linear penalty, lambda 0.5", "Linear penalty, lambda 0.1", "Linear penalty, lambda 0.05","Linear penalty, lambda 0.01", "Linear penalty, lambda 0.005", "Linear penalty, lambda 0.001"))
+
+
+analyze_output(lambda_df_lin, outcome = "pH")
+analyze_output(lambda_df_lin, outcome = "lime")
 ```
-Best perfomance: lanbda 0.001 (no real change in graphs), then, 0.5 - we can see a split in observed vs predicted 
+
+
+
 
 ```{r }
 # Transform the models into the format for consistency evaluation 
-
 # Prepare parameters for de-scaling pH and lime content
 scaling_parameters <- read.csv(file= "scaling_parameters.csv")
 
@@ -340,110 +438,138 @@ lime_mean <- scaling_parameters$mean[scaling_parameters$variable=="lime"]
 lime_std <- scaling_parameters$sd[scaling_parameters$variable=="lime"]
 
 # Create base dataframe with observed values to join with
-df_best_models <- read.csv(file= "../data/prepared_data/y_valid.csv")|>
+df_conistency_lin <- read.csv(file= "../data/prepared_data/y_valid.csv")|>
   dplyr::select(pH, lime) |>
   mutate(pH = (pH * ph_std) + ph_mean,
          lime = (lime * lime_std) + lime_mean,
          model = "Observed values")
 # add index to later join by
-df_best_models$id <- seq.int(nrow(df_best_models))
+df_conistency_lin$id <- seq.int(nrow(df_conistency_lin))
 
+df_conistency_lin <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_lime_imputation_from_3_5_classes", rename_to = "No penalty", df_conistency_lin)
+df_conistency_lin <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_penatly_1", rename_to = "Linear penalty, lambda 1", df_conistency_lin)
+df_conistency_lin <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_penatly_05", rename_to = "Linear penalty, lambda 0.5", df_conistency_lin)
+df_conistency_lin <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_penatly_01", rename_to = "Linear penalty, lambda 0.1",df_conistency_lin)
+df_conistency_lin <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_penatly_005", rename_to = "Linear penalty, lambda 0.05",df_conistency_lin)
+df_conistency_lin <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_penatly_001", rename_to = "Linear penalty, lambda 0.01",df_conistency_lin)
+df_conistency_lin <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_penatly_0005", rename_to = "Linear penalty, lambda 0.005",df_conistency_lin)
+df_conistency_lin <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_penatly_0001", rename_to = "Linear penalty, lambda 0.001",df_conistency_lin)
+df_conistency_lin
 
-df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_1", rename_to = "both_penalty_1", df_best_models)
-df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_075", rename_to = "both_penalty_0_75", df_best_models)
-df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_05", rename_to = "both_penalty_0_5",df_best_models)
-df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_025", rename_to = "both_penalty_0_25",df_best_models)
-df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_01", rename_to = "both_penalty_0_1",df_best_models)
-df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_001", rename_to = "both_penalty_0_01",df_best_models)
-df_best_models <- extract_best_model("lambda_parameter_tuning", best_model_name = "both_no_3_5_classes_dropout_penatly_0001", rename_to = "both_penalty_0_001",df_best_models)
-```
-
-
-```{r evaluate_consistency_lambda}
 # Confusion matrix
-make_ph_lime_confusion_matrix(df_best_models, model_name = "both_penalty_0_001")  
-make_ph_lime_confusion_matrix(df_best_models, model_name = "both_penalty_0_5") 
-make_ph_lime_confusion_matrix(df_best_models, model_name = "both_penalty_0_75") 
+make_ph_lime_confusion_matrix(df_conistency_lin, model_name = "No penalty")  
+make_ph_lime_confusion_matrix(df_conistency_lin, model_name = "Linear penalty, lambda 1") 
+make_ph_lime_confusion_matrix(df_conistency_lin, model_name = "Linear penalty, lambda 0.5") 
+make_ph_lime_confusion_matrix(df_conistency_lin, model_name = "Linear penalty, lambda 0.1")
+make_ph_lime_confusion_matrix(df_conistency_lin, model_name = "Linear penalty, lambda 0.05")
+make_ph_lime_confusion_matrix(df_conistency_lin, model_name = "Linear penalty, lambda 0.01")
+make_ph_lime_confusion_matrix(df_conistency_lin, model_name = "Linear penalty, lambda 0.005")
+make_ph_lime_confusion_matrix(df_conistency_lin, model_name = "Linear penalty, lambda 0.001")
 
 # Metrics
-mse_of_rule_points_negative_incorrect(df_best_models)
+metrics_of_rule_points(df_conistency_lin)
 
 # Histograms
-histogram_lime_below_65(df_best_models) 
+histogram_lime_below_65(df_conistency_lin) 
 
 # Scatterplot of pH against lime
-predicted_against_predicted(df_best_models)  
-
+predicted_against_predicted(df_conistency_lin) 
+```
+```{r}
+histogram_lime_below_65(df_conistency_lin) 
+ggsave(file = "../Figures/lin_penalty_hist_consitency.pdf")
 ```
 
 
+```{r plots_for_report, fig.width = 8, fig.height=8}
 
-Again: 0.001 then 0.5 perform best
+a <- plot_compare_output_distributions(lambda_df_lin, outcome = "pH")
+b <- plot_compare_output_distributions(lambda_df_lin, outcome = "lime")
 
 
+ggarrange(
+  a, b, labels = c("A", "B"),
+  ncol = 1, nrow = 2
+  )
+
+ggsave(file = "../Figures/lin_penalty_hist_pH.pdf")
+```
+
+```{r}
+lambda_df_sqr <- read.csv(file="./tuning_results/lambda_parameter_tuning_squared.csv")|>
+  pivot_to_pred_model()
+lambda_df_sqr
+
+lambda_df_sqr$model <-  fct_recode(lambda_df_sqr$model,  
+                                   "No penalty" = "both_no_lime_imputation_from_3_5_classes", 
+                                   "Squared penalty, lambda 1" = "both_no_3_5_classes_penatly_1_squared",  
+                                   "Squared penalty, lambda 0.5" = "both_no_3_5_classes_penatly_05_squared", 
+                                   "Squared penalty, lambda 0.1" = "both_no_3_5_classes_penatly_01_squared", 
+                                   "Squared penalty, lambda 0.05" = "both_no_3_5_classes_penatly_005_squared", 
+                                   "Squared penalty, lambda 0.01" = "both_no_3_5_classes_penatly_001_squared", 
+                                   "Squared penalty, lambda 0.005" = "both_no_3_5_classes_penatly_0005_squared", 
+                                   "Squared penalty, lambda 0.001" = "both_no_3_5_classes_penatly_0001_squared")
+
+lambda_df_sqr$model <- ordered(lambda_df_sqr$model, levels =c("No penalty","Squared penalty, lambda 1", "Squared penalty, lambda 0.5", "Squared penalty, lambda 0.1", "Squared penalty, lambda 0.05","Squared penalty, lambda 0.01", "Squared penalty, lambda 0.005", "Squared penalty, lambda 0.001"))
+
+
+analyze_output(lambda_df_sqr, outcome = "pH")
+analyze_output(lambda_df_sqr, outcome = "lime")
+```
+Best prediction: 0.01, actually better than no penalty. And 100% consitent. 
+
+```{r}
+# Transform the models into the format for consistency evaluation 
+# Create base dataframe with observed values to join with
+df_conistency_sqr <- read.csv(file= "../data/prepared_data/y_valid.csv")|>
+  dplyr::select(pH, lime) |>
+  mutate(pH = (pH * ph_std) + ph_mean,
+         lime = (lime * lime_std) + lime_mean,
+         model = "Observed values")
+# add index to later join by
+df_conistency_sqr$id <- seq.int(nrow(df_conistency_sqr))
+
+df_conistency_sqr <- extract_best_model("lambda_parameter_tuning_squared", best_model_name = "both_no_lime_imputation_from_3_5_classes", rename_to = "No penalty", df_conistency_sqr)
+df_conistency_sqr <- extract_best_model("lambda_parameter_tuning_squared", best_model_name = "both_no_3_5_classes_penatly_1_squared", rename_to = "Squared penalty, lambda 1", df_conistency_sqr)
+df_conistency_sqr <- extract_best_model("lambda_parameter_tuning_squared", best_model_name = "both_no_3_5_classes_penatly_05_squared", rename_to = "Squared penalty, lambda 0.5", df_conistency_sqr)
+df_conistency_sqr <- extract_best_model("lambda_parameter_tuning_squared", best_model_name = "both_no_3_5_classes_penatly_01_squared", rename_to = "Squared penalty, lambda 0.1",df_conistency_sqr)
+df_conistency_sqr <- extract_best_model("lambda_parameter_tuning_squared", best_model_name = "both_no_3_5_classes_penatly_005_squared", rename_to = "Squared penalty, lambda 0.05",df_conistency_sqr)
+df_conistency_sqr <- extract_best_model("lambda_parameter_tuning_squared", best_model_name = "both_no_3_5_classes_penatly_001_squared", rename_to = "Squared penalty, lambda 0.01",df_conistency_sqr)
+df_conistency_sqr <- extract_best_model("lambda_parameter_tuning_squared", best_model_name = "both_no_3_5_classes_penatly_0005_squared", rename_to = "Squared penalty, lambda 0.005",df_conistency_sqr)
+df_conistency_sqr <- extract_best_model("lambda_parameter_tuning_squared", best_model_name = "both_no_3_5_classes_penatly_0001_squared", rename_to = "Squared penalty, lambda 0.001",df_conistency_sqr)
+df_conistency_sqr
+
+# Confusion matrix
+make_ph_lime_confusion_matrix(df_conistency_sqr, model_name = "No penalty")  
+make_ph_lime_confusion_matrix(df_conistency_sqr, model_name = "Squared penalty, lambda 1") 
+make_ph_lime_confusion_matrix(df_conistency_sqr, model_name = "Squared penalty, lambda 0.5") 
+make_ph_lime_confusion_matrix(df_conistency_sqr, model_name = "Squared penalty, lambda 0.1")
+make_ph_lime_confusion_matrix(df_conistency_sqr, model_name = "Squared penalty, lambda 0.05")
+make_ph_lime_confusion_matrix(df_conistency_sqr, model_name = "Squared penalty, lambda 0.01")
+make_ph_lime_confusion_matrix(df_conistency_sqr, model_name = "Squared penalty, lambda 0.005")
+make_ph_lime_confusion_matrix(df_conistency_sqr, model_name = "Squared penalty, lambda 0.001")
+
+# Metrics
+metrics_of_rule_points(df_conistency_sqr)
+
+# Histograms
+histogram_lime_below_65(df_conistency_sqr) 
+
+# Scatterplot of pH against lime
+predicted_against_predicted(df_conistency_sqr) 
+```
 
 # Evaluation of best models
+## Accuracy
 ```{r}
 best_models <- read.csv(file="./tuning_results/test_predictions_best_models.csv")|>
   pivot_to_pred_model()
 
-scaling_parameters <- read.csv(file= "scaling_parameters.csv")
+best_models$model <-  fct_recode(best_models$model,  "Univariate pH" = "pH_no_lime_imputation_from_3_5_classes", "Univariate Lime" = "lime_no_lime_imputation_from_3_5_classes",  "Multivariate" = "both_no_lime_imputation_from_3_5_classes", "Informed Multivariate" = "both_no_3_5_classes_penatly_01")
 
-ph_mean <- scaling_parameters$mean[scaling_parameters$variable=="pH"]
-ph_std <- scaling_parameters$sd[scaling_parameters$variable=="pH"]
-lime_mean <- scaling_parameters$mean[scaling_parameters$variable=="lime"]
-lime_std <- scaling_parameters$sd[scaling_parameters$variable=="lime"]
-
-
-best_models <- best_models|>
-  mutate(value = ifelse(predicted == "pH",
-                        (value * ph_std) + ph_mean,
-                        (value * lime_std) + lime_mean),
-         pH = (pH * ph_std) + ph_mean,
-         lime = (lime * lime_std) + lime_mean,
-         model = as.factor(model))
-best_models$model <-  revalue(best_models$model, c("pH_no_lime_imputation_from_3_5_classes" = "Univariate pH", "lime_no_lime_imputation_from_3_5_classes" = "Univariate lime", "both_no_lime_imputation_from_3_5_classes" = "Multivariate", "both_no_3_5_classes_penatly_05_correction1" = "Informed Multivariate"))
-
-best_models$model<- ordered(best_models$model, levels =c("Univariate pH", "Univariate lime", "Multivariate", "Informed Multivariate"))
+best_models$model<- ordered(best_models$model, levels =c("Univariate pH", "Univariate Lime", "Multivariate", "Informed Multivariate"))
 
 best_models
-```
-```{r}
-metrics_by_model <-function(df_long, outcome){
-  observed_col <- sym(outcome)
-  
-  df_long %>%
-    filter(predicted == outcome)|>
-    group_by(model) %>%
-    summarise(
-      RMSE = sqrt(mean((!!observed_col - value)^2)),
-      MAE  = mean(abs(!!observed_col - value)),
-      MBE = mean(value - !!observed_col),
-             
-      `MSE zero values` = {
-        y_true <- pull(cur_data(), !!observed_col)
-        y_pred <- pull(cur_data(), value)
-        if (sum(y_true + 0 < 0.0001, na.rm = TRUE) > 0) { # Zero values are not 0, because lime is standardized. Equivalent value of - 0.5062935 is used, however, due to rounding errors a equality is substituted to < with 0.0001 tolarance
-          mean((y_pred[y_true + 0 < 0.0001] - y_true[y_true + 0 < 0.0001])^2, na.rm = TRUE)
-        } else {
-          0
-        }
-      },
-      
-      `MSE non-zero values` = {
-        y_true <- pull(cur_data(), !!observed_col)
-        y_pred <- pull(cur_data(), value)
-        if (sum(y_true > (0 + 0.0001), na.rm = TRUE) > 0) { # similar situation with standarization and rounding error
-          mean((y_pred[y_true > (0 + 0.0001)] - y_true[y_true > (0 + 0.0001)])^2, na.rm = TRUE)
-        } else {
-          0
-        }
-      },
-      
-      `Zero-inflated MSE` = (`MSE zero values` + `MSE non-zero values`) / 2
-    )|>
-    print(n = nrow(.))
-}
 ```
 
 ```{r}
@@ -451,28 +577,47 @@ metrics_by_model(best_models, outcome = "pH")
 metrics_by_model(best_models, outcome = "lime")
 ```
 
-```{r plots_for_poster_ 1, fig.width = 8, fig.height=3}
-plot_observed_predicted <-function(df_long, outcome){
-  plot <- df_long |>
-    filter(predicted == outcome)|>
-    ggplot(aes(x = !!sym(outcome), y = value)) +
-  geom_point(alpha = 0.3) +
-  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
-  facet_wrap(~ model) +
-  labs(
-    x = paste("Observed", outcome),
-    y = paste("Predicted", outcome)
-  ) +
-  theme_minimal()
-  
-  return(plot)
-}
+```{r plots_for_poster_ 1, fig.width = 8, fig.height=6}
 
-plot_observed_predicted(best_models, outcome = "pH")
-ggsave(file = "../Figures/hist_pH_poster.png")
-plot_observed_predicted(best_models, outcome = "lime")
-ggsave(file = "../Figures/hist_lime_poster.png")
+a <- plot_observed_predicted(best_models, outcome = "pH")
+ggsave(a , file = "../Figures/scatter_pH_best_test.pdf")
+b <- plot_observed_predicted(best_models, outcome = "lime")
+
+ggarrange(
+  a, b, labels = c("A", "B"),
+  ncol = 1, nrow = 2
+  )
+
+ggsave(file = "../Figures/scatter_pred_observed_best_test.pdf")
 ```
+
+```{r residuals_best_models, fig.width = 8, fig.height=6}
+a <- plot_residuals(best_models, outcome = "pH")
+ggsave(a , file = "../Figures/scatter_pH_best_test.pdf")
+b <- plot_residuals(best_models, outcome = "lime")
+
+ggarrange(
+  a, b, labels = c("A", "B"),
+  ncol = 1, nrow = 2
+  )
+
+ggsave(file = "../Figures/residuals_best_test.pdf")
+
+```
+
+```{r compare_output_distributions}
+a <- plot_compare_output_distributions(best_models, outcome = "pH")
+b <- plot_compare_output_distributions(best_models, outcome = "lime")
+
+ggarrange(
+  a, b, labels = c("A", "B"),
+  ncol = 1, nrow = 2
+  )
+
+ggsave(file = "../Figures/pred_vs_observed_dist_best_test.pdf")
+```
+
+## Consitency
 ```{r}
 # Prepare parameters for de-scaling pH and lime content
 scaling_parameters <- read.csv(file= "scaling_parameters.csv")
@@ -491,81 +636,37 @@ df_best_models <- read.csv(file= "../data/prepared_data/y_test.csv")|>
 # add index to later join by
 df_best_models$id <- seq.int(nrow(df_best_models))
 
-
-
-extract_best_model_univariate <- function(file_name, best_model_name_ph, best_model_name_lime, rename_to, df_to_join){
-  ph_col <- paste0(best_model_name_ph, ".pH")
-  lime_col <- paste0(best_model_name_lime, ".lime")
-  
-  df <-  read.csv(file= paste0("./tuning_results/", file_name, ".csv"))
-  # add index to later join by
-  df$id <- seq.int(nrow(df))  
-  
-  df_pH <- df |>
-    dplyr::select(id, ph_col)|>
-    dplyr::rename(pH =  !!sym(ph_col))|>
-    # de-scale the predicted values
-    mutate(pH = (pH * ph_std) + ph_mean,
-         model = rename_to)
-  
-  df_lime <- df |>
-    dplyr::select(id, lime_col)|>
-    dplyr::rename(lime = lime_col)|>
-    # de-scale the predicted values
-    mutate(lime = (lime * lime_std) + lime_mean)|>
-    join(df_pH, by = "id")
-  
-  df_to_join <- dplyr::bind_rows(df_to_join, df_lime)
-  return(df_to_join)}
-
 df_best_models <- extract_best_model_univariate("test_predictions_best_models", best_model_name_ph = "pH_no_lime_imputation_from_3_5_classes", best_model_name_lime = "lime_no_lime_imputation_from_3_5_classes", rename_to = "Univariate", df_best_models)
 
 df_best_models <- extract_best_model("test_predictions_best_models", best_model_name = "both_no_lime_imputation_from_3_5_classes", rename_to = "Multivariate",df_best_models)
 
-df_best_models <- extract_best_model("test_predictions_best_models", best_model_name = "both_no_3_5_classes_penatly_05_correction1", rename_to = "Informed Multivariate",df_best_models)
+df_best_models <- extract_best_model("test_predictions_best_models", best_model_name = "both_no_3_5_classes_penatly_01", rename_to = "Informed Multivariate",df_best_models)
 
 df_best_models$model<- factor(df_best_models$model, levels =c("Observed values", "Univariate", "Multivariate", "Informed Multivariate"))
 
 ```
 
-
-```{r f_histogram_consistency, fig.width = 7, fig.height=3}
-histogram_lime_below_65 <- function(model_df){
-   plot <- model_df|>
-    filter(pH < 6.5)|>
-     ggplot(aes(x = lime))+
-     geom_histogram()+
-     facet_wrap(~model)+
-     theme_minimal()+
-       labs(
-    x ="Lime content") +
-     scale_y_continuous(trans='log2')
-   return(plot)
-}
+```{r measures_consit_best_plot}
+metrics_of_rule_points(df_best_models)
 ```
 
-```{r f_infared_lime_pH_relationship, fig.width = 7, fig.height=3}
-predicted_against_predicted <- function(model_df){
-   plot <- model_df|>
-    mutate(low_pH = ifelse(pH < 6.5, TRUE, FALSE))|>
-     ggplot(aes(x = pH, y = lime, colour = low_pH))+
-     geom_point(alpha = 0.3)+
-     facet_wrap(~model)+
-     theme_minimal()+
-       labs(
-    y = "Lime content",
-    colour = "pH < 6.5"
-  ) 
-   return(plot)
-}
-```
-
-```{r}
+```{r plots_consit_best_models, fig.width = 7, fig.height=4}
 histogram_lime_below_65(df_best_models)
-ggsave(file = "../Figures/hist_below_65_poster.png")
+ggsave(file = "../Figures/hist_below_65_best_test.pdf")
 predicted_against_predicted(df_best_models)
-ggsave(file = "../Figures/relationship_pH_lime_poster.png")
+ggsave(file = "../Figures/relationship_pH_lime_best_test.pdf")
 ```
+
+```{r conf_matrix_best_models}
+make_ph_lime_confusion_matrix(df_best_models, "Observed values" )
+make_ph_lime_confusion_matrix(df_best_models, "Univariate" )
+make_ph_lime_confusion_matrix(df_best_models, "Multivariate" )
+make_ph_lime_confusion_matrix(df_best_models, "Informed Multivariate" )
+```
+
+
+
+
 
 # Evaluating the consitency at different depths?
 
@@ -578,4 +679,9 @@ ggsave(file = "../Figures/relationship_pH_lime_poster.png")
 
 xtable(metrics_by_model())
 
+```
+
+```{r}
+#xtable(metrics_by_model(df_imp_both, outcome = "pH"), digits = 3)
+xtable(metrics_by_model(df_imp_both, outcome = "lime"), digits = 3)
 ```
