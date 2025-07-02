@@ -375,7 +375,7 @@ x_map_60 <- x_map_subset_60|>
 
 
 # Process results 
-
+## depth 10
 ```{r}
 df_pred_10 <- read.csv(file='./tuning_results/predictions_map_10.csv')
 df_pred_10
@@ -436,7 +436,73 @@ library(terra)
 # Convert dataframe to raster
 r <- rast(df_pred_10, type = "xyz", crs = "EPSG:2056" )
 
-out_path <- file.path(paste0("../data/prediction_map_raster.tif"))
+out_path <- file.path(paste0("../data/prediction_map_raster_10.tif"))
+writeRaster(r, out_path, overwrite = TRUE)
+```
+## depth 60 
+```{r}
+df_pred_60 <- read.csv(file='./tuning_results/predictions_map_60.csv')
+df_pred_60
+```
+
+
+```{r}
+library(dplyr)
+library(stringr)
+library(rlang)
+
+# make univariate ph and lime named the same
+df_pred_60 <- df_pred_60|>
+  rename(univariate.pH = pH_no_lime_imputation_from_3_5_classes.pH, 
+         univariate.lime = lime_no_lime_imputation_from_3_5_classes.lime)
+
+# Extract model names
+model_names <- unique(str_extract(names(df_pred_60), "^[^\\.]+"))  # extract names before the dot
+model_names
+
+# Remove possible NA values and only keep models that have both pH and lime
+model_names <- model_names[!is.na(model_names)]
+model_names <- model_names[sapply(model_names, function(m) {
+  all(c(paste0(m, ".pH"), paste0(m, ".lime")) %in% names(df_pred_60))
+})]
+model_names
+
+# load scaling parameters to return to observed units
+scaling_parameters <- read.csv(file= "scaling_parameters.csv")
+
+ph_mean <- scaling_parameters$mean[scaling_parameters$variable=="pH"]
+ph_std <- scaling_parameters$sd[scaling_parameters$variable=="pH"]
+lime_mean <- scaling_parameters$mean[scaling_parameters$variable=="lime"]
+lime_std <- scaling_parameters$sd[scaling_parameters$variable=="lime"]
+
+# Loop through models and create new columns
+for (m in model_names) {
+  pH_col_std <- paste0(m, ".pH")
+  lime_col_std <- paste0(m, ".lime")
+  
+  # Create de-standardized versions
+  pH_col_orig <- paste0(m, ".pH_orig")
+  lime_col_orig <- paste0(m, ".lime_orig")
+  
+  df_pred_60[[pH_col_orig]] <- df_pred_60[[pH_col_std]] * ph_std + ph_mean
+  df_pred_60[[lime_col_orig]] <- df_pred_60[[lime_col_std]] * lime_std + lime_mean
+  
+  # Now apply lime threshold on original pH
+  rule_broken_extend_col <- paste0(m, ".rule_broken_extend")
+  df_pred_60[[rule_broken_extend_col]] <- ifelse(df_pred_60[[pH_col_orig]] < 6.5, 
+                                           df_pred_60[[lime_col_orig]], 999)
+}
+
+df_pred_60
+```
+
+```{r}
+library(terra)
+
+# Convert dataframe to raster
+r <- rast(df_pred_10, type = "xyz", crs = "EPSG:2056" )
+
+out_path <- file.path(paste0("../data/prediction_map_raster_60.tif"))
 writeRaster(r, out_path, overwrite = TRUE)
 ```
 

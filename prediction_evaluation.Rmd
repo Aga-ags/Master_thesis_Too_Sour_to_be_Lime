@@ -401,7 +401,7 @@ ggsave(file = "../Figures/overfitting_residuals.pdf")
 ```
 
 # Lambda - impact on accuracy and consistency 
-
+## Linear penalty
 ```{r}
 lambda_df_lin <- read.csv(file="./tuning_results/lambda_parameter_tuning.csv")|>
   pivot_to_pred_model()
@@ -475,25 +475,9 @@ histogram_lime_below_65(df_conistency_lin)
 # Scatterplot of pH against lime
 predicted_against_predicted(df_conistency_lin) 
 ```
-```{r}
-histogram_lime_below_65(df_conistency_lin) 
-ggsave(file = "../Figures/lin_penalty_hist_consitency.pdf")
-```
 
 
-```{r plots_for_report, fig.width = 8, fig.height=8}
-
-a <- plot_compare_output_distributions(lambda_df_lin, outcome = "pH")
-b <- plot_compare_output_distributions(lambda_df_lin, outcome = "lime")
-
-
-ggarrange(
-  a, b, labels = c("A", "B"),
-  ncol = 1, nrow = 2
-  )
-
-ggsave(file = "../Figures/lin_penalty_hist_pH.pdf")
-```
+## Quadratic penalty
 
 ```{r}
 lambda_df_sqr <- read.csv(file="./tuning_results/lambda_parameter_tuning_squared.csv")|>
@@ -516,7 +500,14 @@ lambda_df_sqr$model <- ordered(lambda_df_sqr$model, levels =c("No penalty","Squa
 analyze_output(lambda_df_sqr, outcome = "pH")
 analyze_output(lambda_df_sqr, outcome = "lime")
 ```
-Best prediction: 0.01, actually better than no penalty. And 100% consitent. 
+Best prediction: 0.01, actually better than no penalty. And 100% consistent. 
+
+
+```{r plots_for_report, fig.width = 8, fig.height=8}
+xtable(metrics_by_model(lambda_df_sqr, "lime"), digits = 3)
+```
+
+
 
 ```{r}
 # Transform the models into the format for consistency evaluation 
@@ -565,7 +556,7 @@ predicted_against_predicted(df_conistency_sqr)
 best_models <- read.csv(file="./tuning_results/test_predictions_best_models.csv")|>
   pivot_to_pred_model()
 
-best_models$model <-  fct_recode(best_models$model,  "Univariate pH" = "pH_no_lime_imputation_from_3_5_classes", "Univariate Lime" = "lime_no_lime_imputation_from_3_5_classes",  "Multivariate" = "both_no_lime_imputation_from_3_5_classes", "Informed Multivariate" = "both_no_3_5_classes_penatly_01")
+best_models$model <-  fct_recode(best_models$model,  "Univariate pH" = "pH_no_lime_imputation_from_3_5_classes", "Univariate Lime" = "lime_no_lime_imputation_from_3_5_classes",  "Multivariate" = "both_no_lime_imputation_from_3_5_classes", "Informed Multivariate" = "both_no_3_5_classes_penatly_001_squared")
 
 best_models$model<- ordered(best_models$model, levels =c("Univariate pH", "Univariate Lime", "Multivariate", "Informed Multivariate"))
 
@@ -640,7 +631,7 @@ df_best_models <- extract_best_model_univariate("test_predictions_best_models", 
 
 df_best_models <- extract_best_model("test_predictions_best_models", best_model_name = "both_no_lime_imputation_from_3_5_classes", rename_to = "Multivariate",df_best_models)
 
-df_best_models <- extract_best_model("test_predictions_best_models", best_model_name = "both_no_3_5_classes_penatly_01", rename_to = "Informed Multivariate",df_best_models)
+df_best_models <- extract_best_model("test_predictions_best_models", best_model_name = "both_no_3_5_classes_penatly_001_squared", rename_to = "Informed Multivariate",df_best_models)
 
 df_best_models$model<- factor(df_best_models$model, levels =c("Observed values", "Univariate", "Multivariate", "Informed Multivariate"))
 
@@ -668,8 +659,33 @@ make_ph_lime_confusion_matrix(df_best_models, "Informed Multivariate" )
 
 
 
-# Evaluating the consitency at different depths?
+## Checking impact of depth
 
+```{r}
+x_test <- read.csv(file='../data/prepared_data/x_test.csv')
+y_test <- read.csv(file="./tuning_results/test_predictions_best_models.csv")
+combined <- cbind(x_test, y_test)
+combined
+```
+```{r}
+ggplot(data = combined, aes(x = depth, y = pH_no_lime_imputation_from_3_5_classes.pH))+
+  geom_point()
+
+ggplot(data = combined, aes(x = depth, y = lime_no_lime_imputation_from_3_5_classes.lime))+
+  geom_point()
+
+ggplot(data = combined, aes(x = depth, y = both_no_3_5_classes_penatly_001_squared.pH))+
+  geom_point()
+
+ggplot(data = combined, aes(x = depth, y = both_no_lime_imputation_from_3_5_classes.lime))+
+  geom_point()
+
+ggplot(data = combined, aes(x = depth, y = both_no_3_5_classes_penatly_001_squared.pH))+
+  geom_point()
+
+ggplot(data = combined, aes(x = depth, y = both_no_3_5_classes_penatly_001_squared.lime))+
+  geom_point()
+```
 
 
 
