@@ -95,10 +95,19 @@ plot_observed_predicted <-function(df_long, outcome){
   geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
   facet_wrap(~ model) +
   labs(
-    x = paste("Actual", outcome),
+    x = paste("Observed", outcome),
     y = paste("Predicted", outcome)
   ) +
   theme_minimal()
+  
+  # Formatting label to contain unit for lime
+  if(outcome == "lime") {
+  plot <- plot +
+    labs(
+    x = paste("Observed", outcome, "content [%]"),
+    y = paste("Predicted", outcome, "content [%]")
+  )
+}
   
   print(plot)
 }
@@ -113,22 +122,27 @@ plot_residuals <-function(df_long, outcome){
   res_dist1 <- ggplot(df, aes(x = value, y = residuals)) +
   geom_point(color = "darkorange2", alpha = 0.3) +
   geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(title = paste("Residuals vs Fitted for", outcome), x = "Predicted", y = "Residuals") +
+  labs(title = paste("Residuals vs Fitted for", outcome), x =  paste("Predicted", outcome), y = "Residuals") +
   theme_minimal()+
      facet_wrap(~ model)
+ 
+  # Formatting label to contain unit for lime 
+  if(outcome == "lime") {
+    res_dist1 <- res_dist1 +
+      labs(x = paste("Predicted", outcome, "content [%]"))
+  }
+
   
   res_dist2 <- ggplot(df, aes(x = residuals)) +
   geom_histogram(bins = 30, fill = "darkorange2",color = "black") +
-  labs(title = paste("Distribution of residuals for", outcome), x = "Residual", y = "Count") +
+  labs(title = paste("Distribution of residuals for", outcome), x = "Residuals", y = "Count") +
   theme_minimal()+
      facet_wrap(~ model)
   
-    print(res_dist1)
-   print(res_dist2)
+  print(res_dist1)
+  print(res_dist2)
   return(res_dist1)
 }
-
-
 ```
 
 ```{r compare_output_distributions}
@@ -152,6 +166,12 @@ plot_compare_output_distributions <- function(df_long, outcome) {
     ) +
     theme_minimal() +
     facet_wrap(~ model)
+  
+  # Formatting label to contain unit for lime
+   if(outcome == "lime") {
+    predicted_distribution_validation_data <- predicted_distribution_validation_data +
+      labs(x = paste(outcome, "content [%]"))
+   }
   
   print(predicted_distribution_validation_data)
 }
@@ -239,7 +259,7 @@ make_ph_lime_confusion_matrix <- function(df, model_name) {
   # Create matrix with both count and percentage
   formatted_matrix <- count_table %>%
     mutate(label = sprintf("%d (%.1f%%)", n, 100 * n / total)) %>%
-    select(pH_group, lime_group, label) %>%
+    dplyr::select(pH_group, lime_group, label) %>%
     pivot_wider(names_from = lime_group, values_from = label) %>%
     column_to_rownames("pH_group")
   
@@ -267,6 +287,8 @@ predicted_against_predicted <-function(model_df){
     mutate(low_pH = ifelse(pH < 6.5, TRUE, FALSE))|>
      ggplot(aes(x = pH, y = lime, colour = low_pH))+
      geom_point()+
+     labs(
+    y ="Lime content [%]")+
      facet_wrap(~model)+
      theme_minimal()
   return(plot)
@@ -284,25 +306,14 @@ histogram_lime_below_65 <- function(model_df){
      facet_wrap(~model)+
      theme_minimal()+
        labs(
-    x ="Lime content",
-     y ="Count (log)") +
+    x ="Lime content [%]",
+     y ="Count [log]") +
      scale_y_continuous(trans = pseudo_log_trans(base = 2),
   breaks = c(2, 8, 32, 128))
    return(plot)
 }
 ```
 
-# Test
-```{r}
-df_test <- read.csv(file="./tuning_results/test2.csv")|>
-  pivot_to_pred_model()
-
-analyze_output(df_test, outcome = "pH")
-analyze_output(df_test, outcome = "lime")
-```
-For models with no imputation and penalty: the penalty does not improve pH prediction (more pH <6.5 is predicted than its there) and for some lime it makes more zero to be predicted. So, the 0 lime, pH < 6.5 are predicted more often, but there is also a lot more 0 lime predicted when not needed and non zero limed predicted when it should be zero...
-
-For models with MSE + lambda: actually makes the preditions for univariate better, but for some reason introducing the penalty makes the prediction of both lime worse for zero... Maybe: the term is linear while the MSE is squared, so it takes away the importance of the MSE while itself having a smaller penatly for larger diviation?
 
 # Choice of imputation strategy and weights inclusion
 ```{r load_imp_data}
@@ -549,6 +560,7 @@ histogram_lime_below_65(df_conistency_sqr)
 # Scatterplot of pH against lime
 predicted_against_predicted(df_conistency_sqr) 
 ```
+
 
 # Evaluation of best models
 ## Accuracy

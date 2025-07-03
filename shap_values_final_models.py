@@ -27,7 +27,7 @@ def create_shap_values_plot(model_name, output_variable):
     # visualize the first prediction's explanation (use matplotlib=True to avoid Javascript)
     shap.summary_plot(np.squeeze(shap_values),x_test,feature_names=x_features, show=False)
     plt.savefig('../Figures/Shap_plots/' + model_name + output_variable +'.png')
-    plt.cla()
+    plt.close()
     
 # Univariate
 create_shap_values_plot(model_name = "pH_no_lime_imputation_from_3_5_classes", output_variable = "pH")

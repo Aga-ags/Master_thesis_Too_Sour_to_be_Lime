@@ -8,19 +8,29 @@ output: html_document
 
 # Libararies
 ```{r}
-library(mice)
-library(ggmice)
-library(fitdistrplus) # fitting gamma distribution
+# General 
 library(tidyverse)
 library(purrr)
+
+# Missing data visualization 
+library(mice)
+library(ggmice)
+
+# Processing of rasters and vectors
 library(terra)
 library(sf)
-library(obliquer)
+
+# Other
+library(obliquer) # rotated coordinate axis
 library(RColorBrewer) # pretty colours graphs
+
+# Remove randomness
 set.seed(142)
 ```
-# Loading data
+
+# Load soil data
 ```{r}
+# Load soil data
 df_org <- read_csv("../data/ZH_nabodat_dataset_v1.0.csv")|>
   mutate(across(contains("datum"), ~ as.Date(., format = "%d.%m.%Y")))|>
   mutate(horizontbezeichnung = as.factor(horizontbezeichnung),
@@ -29,44 +39,43 @@ df_org <- read_csv("../data/ZH_nabodat_dataset_v1.0.csv")|>
          anonymisierung = as.factor(anonymisierung))
 df_org
 
+# Rename the columns to English:
 df_soil_org<-df_org
-# rename the columns to english names:
 colnames(df_soil_org) <- c("id", "canton", "x", "y", "anonymization", "recording_date", "survey_number", "survey_date", "survey_type","profile_id", "horizon_number", "depth_from_cm", "depth_to_cm", "horizon_name", "initial_info_horizon_name", "humus_content_percent", "clay_percent", "silt_percent", "sand_percent",  "gravel_volume_percent", "stones_volume_percent", "lime_site", "pH_brightness", "fine_grain_size", "clay_from_initial_info_proc", "clay_to_initial_info_proc", "silt_from_initial_info_proc", "silt_to_initial_info_proc", "sand_from_initial_info_proc", "sand_to_initial_info_proc",
 "skeletal_content", "skeletal_content_from_initial_info_vol_proc",
 "skeletal_content_to_initial_info_vol_proc", "version", "date", "id.rec", "lime", "pH-H2O", "pH-CaCl2", "humus", "Corg", "clay", "silt")
 
+# Format columns
 df_soil_org <- df_soil_org|>
   mutate(horizon_number = as.factor(horizon_number))|>
   mutate(recording_year = as.numeric(format(as.Date(recording_date, format="%d/%m/%Y"),"%Y") ))
 ```
+
 ```{r}
-colnames(df_org)
-```
-```{r}
-# how many samples
+# Number of sites
 df_soil_org|>
   dplyr::select(id)|>
   unique()|>
   nrow()
 
+# Number of horizons
 df_soil_org|>
   nrow()
-  
 ```
 
-# Initial data processing
+# Initial soil data processing
 
 There is 3904 samples in general, with multiple horaizons per sample. But in a few sites the measurements are repeated (3952 unique horizon 1 measurements). However, all of the repeated samples are also annnymized. 
 
 ```{r}
-# Step 1: Identify sites with multiple profiles
+# Identify sites with multiple profiles
 multi_profile_sites <- df_soil_org %>%
   group_by(id) %>%
   summarise(n_profiles = n_distinct(profile_id)) %>%
   filter(n_profiles > 1) %>%
   pull(id)
 
-# Step 2: Subset the dataframe to only those sites
+# Check if any multiple profiles also not anonymized
 df_soil_org %>%
   filter(id %in% multi_profile_sites)|>
   filter(anonymization == 0)
@@ -74,99 +83,83 @@ df_soil_org %>%
 
 
 ## Remove annonymized points
+
+Remove anonymized points since they are too inaccurate: 
 ```{r}
-# ploting where annonymized points are located 
-df <- df_soil_org
-
-df_sf <- st_as_sf(df, coords = c("x", "y"), crs = 2056)  
-
-ggplot() +
-  geom_sf(data = df_sf, aes(color = anonymization)) +
-  labs(title = "Map of anonymization")
-```
-
-Unfortunately, the anonymized points are not equally distributed throughout the sampling place, but there is plenty of measurements around them.
-
-
-Remove annonmyzation points since they are too inaccurate: 
-```{r}
+# Check number of sites before
 length(unique(df_soil_org[["id"]]))
+
+# Check number of anonymized  sites
 annonymized_points <- df_soil_org|>
   filter(anonymization == 1)
 length(unique(annonymized_points[["id"]]))
 
-
+# Remove anonymized horizons
 df_soil <- df_soil_org|>
   filter(anonymization == 0)
 ```
 105 sites of 3904 are removed, to 3799.
 
 
+# EDA on original data
+
 ```{r}
-colnames(df_soil)
+# Inspect the columns
+summary(df_soil)
 
-head(df_soil)
-
+# Number of rows
 nrow(df_soil)
 ```
-# Notes:
-All values are in the Zurich canton
-
-
-# EDA on original data
-```{r}
-summary(df_soil)
-```
-
 
 ```{r}
+# Check distribution of survey and recording dates
 ggplot(df_soil, aes(x = survey_date))+
 geom_histogram()
+
 ggplot(df_soil, aes(x = recording_date))+
 geom_histogram()
 
-
 ```
-The data spans from 1960 to 2000, with one point later on. All values are not from survey 1.  Survey and recording data are identical on this scale. 
+The data spans from 1960 to 2000, with one point later on. Survey and recording data are identical on this scale. 
 
 
 
-# Join with agriculture land use
+# Join with arable land use
 
 ```{r}
+# load arable land raster
 areable_land_raster <- terra::rast("../data/zh_arable_land_s3.tif")
 crs(areable_land_raster)  <- "epsg:2056"
-```
 
-
-```{r}
 plot(areable_land_raster)
 ```
+
+
 ```{r}
-# crs points
+# Convert soil data into a vector 
 points_vect_soil <- vect(df_soil, geom = c("x", "y"), crs = crs(areable_land_raster))
+
+# Extract raster value at each soil point
 vals <- extract(areable_land_raster, points_vect_soil)
 vals
 
-# join the raster values to soil df
+# Join the raster values to soil df
 df_soil_areable_value <- df_soil %>%
   mutate(ID_row = row_number()) %>%
   left_join(vals, join_by("ID_row" == "ID"))
 
 df_soil_areable_value <- as.data.frame(df_soil_areable_value)
 
+# Subset to only arable land points
 df_soil_arable <- df_soil_areable_value %>%
   filter(zh_arable_land_s3 == 1)|>
   dplyr::select(!c("zh_arable_land_s3", "ID_row"))
+
 df_soil_arable
-```
 
-
-How many datapoints are there now?
-```{r}
-length(unique(df_soil_arable[["id"]]))
+# Number of sites post arable land
+length(unique(df_soil_arable[["id"]])) # the number stays the same - the data was already subset to arable land
 ```
-The same amount, so it was subset already. 
 
 
 # Subset to relevant soil values
@@ -175,33 +168,33 @@ df_soil_selected <- df_soil_arable |>
   dplyr::select(c("id", "x", "y", "horizon_number", "recording_year",  "depth_from_cm", "depth_to_cm", "survey_type", "lime", "lime_site") | contains("pH"))
 
 df_soil_selected
-
-length(unique(df_soil_selected[["id"]]))
 ```
 
-
-## pH missings
+# Missing soil values
 
 ```{r}
-# plotting patterns of missingness in the pH values
+# plotting patterns of missingness in soil data
 plot_pattern(df_soil_selected, rotate = TRUE)
 
-# Visualization for the paper
+# Visualization of missing pH values 
 df_soil_selected|>
   rename(pH_site  = pH_brightness)|>
    dplyr::select(`pH-CaCl2`,`pH-H2O`, pH_site)|>
   plot_pattern(rotate = TRUE)
 
+# Visualization of missing lime content values 
 df_soil_selected|>
   rename(pH_site  = pH_brightness)|>
    dplyr::select(lime, lime_site)|>
   plot_pattern(rotate = TRUE)
-
 ```
 
 
+## Impute pH
+
 ```{r}
-# from the original dataframe (with annonymized points) we can see that the relationships between site pH and CaCl2 is quite 1:1, with a small number of outliers.
+# Investigating relationship between CaCl2 pH and site pH
+# From the original dataframe (with annonymized points) we can see that the relationships between site pH and CaCl2 is quite 1:1, with a small number of outliers.
 ggplot(data = df_soil_org, aes(x = `pH-CaCl2`, y = pH_brightness))+
   geom_point()+
   geom_abline(slope = 1, intercept = 0)+
@@ -210,31 +203,26 @@ ggplot(data = df_soil_org, aes(x = `pH-CaCl2`, y = pH_brightness))+
   
 ggsave(file = "../Figures/site_lab_relationship_plot.pdf")
 
-# Finding just how many points have been plotted
+# Finding how many points have been plotted
 df_soil_org|>
   dplyr::select(`pH-CaCl2`, pH_brightness)|>
   filter((!is.na(`pH-CaCl2`)) & (!is.na(`pH_brightness`)))|>
   nrow()
-```
 
-
-```{r}
-# Uncertaintity of 1 - 1 impuatation of site pH into CaCl2:
-
+# Quantifying uncertainty of 1 - 1 imputation of site pH into CaCl2:
+# Coralation
 correlation_pH <- cor(df_soil_org$pH_brightness, df_soil_org$`pH-CaCl2`, use = "complete.obs")
 correlation_pH
 
+# Error of imputation
 pred_Ca_check <- df_soil_org|>
   filter(!is.na(`pH-CaCl2`) & !is.na(pH_brightness))|>
   dplyr::select(`pH-CaCl2`, pH_brightness)
 
 rmse <- sqrt(mean((pred_Ca_check$`pH-CaCl2` - pred_Ca_check$pH_brightness)^2))
 rmse
-
 ```
-On average the actual pH is 0.57 away from the site measure 
 
-## Convert pH-H2O and site pH into pH-CaCl2
 ```{r missing_pattern_pH,  fig.width = 14 fig.height=5}
 df_soil_selected_pH_conv <- df_soil_selected|>
   # CaCl2 is missing, try imputing from H2O
@@ -356,7 +344,7 @@ df_swiss|>
   geom_vline(xintercept = 6.5)+
   geom_vline(xintercept = 6)+
   theme_minimal()+
-  labs(x ="Imputed pH", y = "Laboratory lime content", colour = "Origin of pH value")+
+  labs(x ="Imputed pH", y = "Laboratory lime content [%]", colour = "Origin of pH value")+
   annotate("text", x = 6.15, y = 110, label = "6") +
   annotate("text", x = 6.8, y = 110, label = "6.5")
 
@@ -372,7 +360,7 @@ df_swiss|>
   ggplot(aes(y = lime, x = lime_site))+
   geom_boxplot()+
   theme_minimal()+
-  labs(x ="Site lime classification", y = "Laboratory lime content")
+  labs(x ="Site lime classification", y = "Laboratory lime content [%]")
 
 ggsave(file = "../Figures/lime_site_lab_lime_switzerland_histograms.pdf")
 
@@ -658,7 +646,7 @@ df_lime_dist$lime_origin<-ordered(df_lime_dist$lime_origin, levels =c("Laborator
   ggplot(df_lime_dist, aes(x = lime, fill = lime_origin))+ 
   geom_histogram(bins = 30)+
   theme_minimal()+
-  labs(x = "Lime content", y = "Count",  fill = "Origin of lime value")+
+  labs(x = "Lime content [%]", y = "Count",  fill = "Origin of lime value")+
     scale_fill_brewer(palette = "Dark2")
 ggsave(file = "../Figures/distribution_lime.pdf")
 

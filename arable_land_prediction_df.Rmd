@@ -374,6 +374,7 @@ x_map_60 <- x_map_subset_60|>
 ```
 
 
+
 # Process results 
 ## depth 10
 ```{r}
@@ -500,7 +501,7 @@ df_pred_60
 library(terra)
 
 # Convert dataframe to raster
-r <- rast(df_pred_10, type = "xyz", crs = "EPSG:2056" )
+r <- rast(df_pred_60, type = "xyz", crs = "EPSG:2056" )
 
 out_path <- file.path(paste0("../data/prediction_map_raster_60.tif"))
 writeRaster(r, out_path, overwrite = TRUE)
