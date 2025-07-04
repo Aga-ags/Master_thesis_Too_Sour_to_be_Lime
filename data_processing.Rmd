@@ -1089,6 +1089,342 @@ saveRDS(df_soil_arable, file="../data/arable_samples_all.Rda")
 ```
 
 
+
+
+
+# Data spliting 
+Made to be independent of previous part
+
+```{r libraries}
+# Geoprocessing
+library(terra)
+library(sf)
+
+# General
+library(tidyverse)
+library(tableone)
+library(recipes)
+set.seed(114)
+```
+
+## Load data 
+```{r load_data}
+df <- readRDS(file="../data/processed_data.Rda")
+df
+```
+
+
+## Make sample weights
+
+```{r}
+df <- df |>
+  mutate(sample_weight_pH = ifelse(pH_origin == "site", 0.7, ifelse(pH_origin == "CaCl2", 1, 0.9)),
+         sample_weight_lime = ifelse(lime_imputed == TRUE, 0.9, 1),
+         sample_weight_lime = ifelse(lime_imputed_3_5 == TRUE, sample_weight_lime - 0.2, sample_weight_lime)
+  )
+```
+
+## One code encoding for categorical 
+```{r}
+recipe_obj <- recipe(~ ., data = df) %>%
+  step_dummy(all_nominal() & !any_of(c("pH_origin", "lime_imputed", "lime_imputed_3_5", "lime_imputed_0_2")), one_hot = TRUE) %>%
+  prep()
+
+one_hot_df <- bake(recipe_obj, new_data = NULL)
+one_hot_df
+```
+
+
+## Split data
+```{r}
+# extract sites:
+df_sites <- one_hot_df|>
+  dplyr::select("x", "y")|>
+  unique()
+print("Number of sites")
+nrow(df_sites)
+
+# find which sites contain 
+imputed_sites <- one_hot_df |>
+  dplyr::select("x", "y", "pH_origin", "lime_imputed")|>
+  filter(pH_origin %in% c("site", "H2O") | lime_imputed == TRUE)|>
+  dplyr::select("x", "y")|>
+  unique()
+imputed_sites
+
+# find which sites are fully observed from certain data
+observed_sites <- dplyr::anti_join(df_sites, imputed_sites, by = c("x", "y"))
+observed_sites
+
+
+# find percentage to sample the not imputed data to equal to 20 perc of entire site sample
+sample_10 <- 0.1 * nrow(df_sites)
+amount_of_non_imputed_equal_to_10_perc <- sample_10/ nrow(observed_sites)
+amount_of_non_imputed_equal_to_10_perc
+
+
+# testing and validation datasets 
+# extract sites:
+test_and_validation_sites <- observed_sites %>%   
+  dplyr::sample_frac(amount_of_non_imputed_equal_to_10_perc)
+print("Numer of validation and test sites:")
+nrow(test_and_validation_sites)
+
+validation_sites <- test_and_validation_sites %>% dplyr::sample_frac(0.50)
+print("Numer of validation sites:")
+nrow(validation_sites)
+
+test_sites <- dplyr::anti_join(test_and_validation_sites, validation_sites, by = c("x", "y"))
+print("Numer of test sites:")
+nrow(test_sites)
+
+
+#subset dataframe
+validation <- dplyr::inner_join(one_hot_df, validation_sites, by = c("x", "y"))
+print("Numer of validation horizons:")
+nrow(validation)
+
+test <- dplyr::inner_join(one_hot_df, test_sites, by = c("x", "y"))
+print("Numer of test horizons:")
+nrow(test)
+
+# remaining df creates the train df: 
+train  <- dplyr::anti_join(one_hot_df, test_and_validation_sites, by = c("x", "y"))
+print("Numer of train horizons:")
+nrow(train)
+
+# rejoin the data into a single dataframe with indication of split:
+df_1 <- train |>
+  mutate(split = "Train")
+df_2 <- validation |>
+  mutate(split = "Validation")
+df_3 <- test |>
+  mutate(split = "Test")
+
+df <- rbind(df_1, df_2, df_3)
+```
+
+
+## Investigate the representatives of test sample:
+```{r}
+df_all_samples_arable <- readRDS(file="../data/arable_samples_all.Rda")|>
+  st_as_sf(coords = c("x", "y"), crs = 2056)
+
+test_sf <- st_as_sf(test, coords = c("x", "y"), crs = 2056)  
+train_sf <- st_as_sf(train, coords = c("x", "y"), crs = 2056)
+validation_sf <- st_as_sf(validation, coords = c("x", "y"), crs = 2056)
+
+df_sf <- st_as_sf(df, coords = c("x", "y"), crs = 2056)
+# Save the sf object as shapefile
+st_write(df_sf, "../data/data_with_training_test_split.shp", append=FALSE)
+
+plot(st_geometry(df_all_samples_arable), col = 'grey', main = "Data splits spatial distribution")
+plot(st_geometry(train_sf), col = 'blue', add = TRUE)
+plot(st_geometry(test_sf), col = 'red', add = TRUE)
+plot(st_geometry(validation_sf), col = 'yellow', add = TRUE)
+legend("bottomright", legend = c("All", "Train", "Test", "Validation"), col = c("grey", "blue", "red", "yellow"), pch = 1)
+
+```
+
+```{r}
+areable_land_raster <- terra::rast("../data/zh_arable_land_s3.tif")
+crs(areable_land_raster)  <- "epsg:2056"
+```
+
+```{r}
+plot(areable_land_raster,      
+     breaks = c(-0.5,0.5,1.5), 
+     col = c("white", "black"))
+plot(st_geometry(test_sf), col = 'red',  pch = 16, add = TRUE)
+
+plot(areable_land_raster,      
+     breaks = c(-0.5,0.5,1.5), 
+     col = c("white", "black"))
+plot(st_geometry(train_sf), col = 'red',  pch = 16, add = TRUE)
+
+plot(areable_land_raster,      
+     breaks = c(-0.5,0.5,1.5), 
+     col = c("white", "black"))
+plot(st_geometry(validation_sf), col = 'red',  pch = 16, add = TRUE)
+
+plot(areable_land_raster,      
+     breaks = c(-0.5,0.5,1.5), 
+     col = c("white", "black"))
+plot(st_geometry(test_sf), col = 'red',  pch = 16, add = TRUE)
+plot(st_geometry(validation_sf), col = 'green',  pch = 16, add = TRUE)
+
+plot(areable_land_raster,      
+     breaks = c(-0.5,0.5,1.5), 
+     col = c("white", "black"))
+observed_sites|>
+  st_as_sf(coords = c("x", "y"), crs = 2056) |>
+    plot(col = 'red',  pch = 16, add = TRUE)
+  
+```
+
+```{r}
+#columns <- df|>
+#  dplyr::select(-"x", -"y", - "split")|>
+#  colnames()
+#CreateTableOne(vars =columns, strata = "split", data = df)
+```
+
+# Compare pH and lime distribution across splits
+```{r}
+ggplot(df, aes(x = pH))+
+  geom_histogram(bins = 20)+
+  facet_wrap(~ split, scales = "free")
+
+ggplot(df, aes(x = pH))+
+  geom_histogram(bins = 20)
+
+ggplot(df, aes(x = lime))+
+  geom_histogram(bins = 20)+
+  facet_wrap(~ split, scales = "free")
+
+ggplot(df, aes(x = lime))+
+  geom_histogram(bins = 20)
+```
+
+
+# Save prepared data
+```{r save_val_test}
+x_valid <- validation|>
+  dplyr::select(!c("pH", "pH_origin", "x", "y", "sample_weight_pH", "sample_weight_lime", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
+  as.matrix()
+y_valid  <- validation|>
+  dplyr::select("pH", "lime")
+
+x_test <- test|>
+  dplyr::select(!c("pH", "pH_origin", "x", "y", "sample_weight_pH", "sample_weight_lime", "lime", "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5"))|>
+  as.matrix()
+y_test  <- test |>
+  dplyr::select("pH", "lime")
+
+write.csv(x_valid,file='../data/prepared_data/x_valid.csv', row.names=FALSE)
+write.csv(y_valid,file='../data/prepared_data/y_valid.csv', row.names=FALSE)
+
+write.csv(x_test,file='../data/prepared_data/x_test.csv', row.names=FALSE)
+write.csv(y_test,file='../data/prepared_data/y_test.csv', row.names=FALSE)
+```
+
+
+```{r}
+train |> count(pH_origin, lime_imputed, sort = TRUE)
+```
+
+```{r save_training_per_imp_scenario}
+# Select training data based on imputation conditions
+
+# Save the covariates of the training data under imputation scenario
+prepare_x <- function(df, filter_expr, file_name) {
+  filtered <- df %>%
+    filter(!!rlang::enquo(filter_expr))
+  
+  x <- filtered %>%
+    select(-c("pH", "pH_origin", "x", "y", "sample_weight_pH", "sample_weight_lime", "lime", 
+              "lime_imputed", "lime_imputed_0_2", "lime_imputed_3_5")) %>%
+    as.matrix()
+  write.csv(x, file = paste0('../data/prepared_data/x_train_', file_name, '.csv'), row.names=FALSE )
+  return(x)
+}
+
+# Save the outputs of the training data under imputation scenario
+prepare_y <- function(df, filter_expr, file_name) {
+  filtered <- df %>%
+    filter(!!rlang::enquo(filter_expr))
+  
+  y <- filtered %>%
+  dplyr::select("pH", "lime")
+  
+  write.csv(y, file = paste0('../data/prepared_data/y_train_', file_name, '.csv'), row.names=FALSE )
+  return(y)
+}
+
+# save the weights for training data
+prepare_weights <-  function(df, filter_expr, file_name){
+  weights <- df|>
+  filter(!!rlang::enquo(filter_expr))|>
+  dplyr::select("sample_weight_pH", "sample_weight_lime")
+  
+  write.csv(weights,file=paste0('../data/prepared_data/sample_weights_', file_name,'.csv'), row.names=FALSE)
+  return(weights)
+}
+  
+
+# Create the imputation scenarios:
+# Everything imputed:
+x_train_full_imp <- prepare_x(train, TRUE, file_name = "full_imp")
+y_train_full_imp <- prepare_y(train, TRUE, file_name = "full_imp")
+weights_full_imp <- prepare_weights(train, TRUE, file_name = "full_imp")
+
+
+# All lime imputed, different pH imputations (train is fully imputed): 
+x_train_no_site_H2O <- prepare_x(train, pH_origin != "site" & pH_origin != "H2O", file_name = "no_site_H2O")
+y_train_no_site_H2O <- prepare_y(train, pH_origin != "site" & pH_origin != "H2O", file_name = "no_site_H2O")
+weights_no_site_H2O <- prepare_weights(train, pH_origin != "site" & pH_origin != "H2O", file_name = "no_site_H2O")
+
+
+x_train_no_site <- prepare_x(train, pH_origin != "site", file_name = "no_site")
+y_train_no_site <- prepare_y(train, pH_origin != "site", file_name = "no_site")
+weights_no_site <- prepare_weights(train, pH_origin != "site", file_name = "no_site")
+
+# All pH, different lime imputations (train is fully imputed): 
+x_train_no_lime_imputation <- prepare_x(train, lime_imputed == FALSE, file_name = "no_lime_imputation")
+y_train_no_lime_imputation <- prepare_y(train, lime_imputed == FALSE, file_name = "no_lime_imputation")
+weights_no_lime_imputation <- prepare_weights(train, lime_imputed == FALSE, file_name = "no_lime_imputation")
+
+x_train_no_lime_imputation_from_lime_classes <- prepare_x(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_lime_classes")
+y_train_no_lime_imputation_from_lime_classes  <- prepare_y(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_lime_classes")
+weights_no_lime_imputation_from_lime_classes  <- prepare_weights(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_lime_classes")
+
+x_train_no_lime_imputation_from_3_5_classes <- prepare_x(train, lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_3_5_classes")
+y_train_no_lime_imputation_from_3_5_classes  <- prepare_y(train, lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_3_5_classes")
+weights_no_lime_imputation_from_3_5_classes  <- prepare_weights(train, lime_imputed_3_5 == FALSE, file_name = "no_lime_imputation_from_3_5_classes")
+
+# Remaining combinations of some pH and some lime
+
+# no lime imputation & some pH
+x_train_no_imputation <- prepare_x(train, pH_origin != "site" & pH_origin != "H2O" & lime_imputed == FALSE, file_name = "no_imputation")
+y_train_no_imputation <- prepare_y(train, pH_origin != "site" & pH_origin != "H2O" & lime_imputed == FALSE, file_name = "no_imputation")
+weights_no_imputation <- prepare_weights(train, pH_origin != "site" & pH_origin != "H2O" & lime_imputed == FALSE, file_name = "no_imputation")
+
+x_train_no_lime_imputation_site <- prepare_x(train, pH_origin != "site" & lime_imputed == FALSE, file_name = "no_lime_imputation_site")
+y_train_no_lime_imputation_site  <- prepare_y(train, pH_origin != "site" & lime_imputed == FALSE , file_name = "no_lime_imputation_site")
+weights_no_lime_imputation_site  <- prepare_weights(train, pH_origin != "site" & lime_imputed == FALSE, file_name = "no_lime_imputation_site")
+
+# lime from 6.5 and some pH
+x_train_no_lime_imputation_from_lime_classes_H2O_site <- prepare_x(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site" & pH_origin != "H2O", file_name = "no_lime_imputation_from_lime_classes_H2O_site")
+y_train_no_lime_imputation_from_lime_classes_H2O_site   <- prepare_y(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site" & pH_origin != "H2O", file_name = "no_lime_imputation_from_lime_classes_H2O_site")
+weights_no_lime_imputation_from_lime_classes_H2O_site  <- prepare_weights(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site" & pH_origin != "H2O", file_name = "no_lime_imputation_from_lime_classes_H2O_site")
+
+x_train_no_lime_imputation_from_lime_classes_site <- prepare_x(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site", file_name = "no_lime_imputation_from_lime_classes_site")
+y_train_no_lime_imputation_from_lime_classes_site  <- prepare_y(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site", file_name = "no_lime_imputation_from_lime_classes_site")
+weights_no_lime_imputation_from_lime_classes_site  <- prepare_weights(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site", file_name = "no_lime_imputation_from_lime_classes_site")
+
+# lime from 6.5 and 0-2 and some pH
+x_train_no_lime_imputation_from_3_5_classes_H2O_site <- prepare_x(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site" & pH_origin != "H2O", file_name = "no_lime_imputation_from_3_5_classes_H2O_site")
+y_train_no_lime_imputation_from_3_5_classes_H2O_site   <- prepare_y(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site" & pH_origin != "H2O", file_name = "no_lime_imputation_from_3_5_classes_H2O_site")
+weights_no_lime_imputation_from_3_5_classes_H2O_site  <- prepare_weights(train, lime_imputed_0_2 == FALSE & lime_imputed_3_5 == FALSE & pH_origin != "site" & pH_origin != "H2O", file_name = "no_lime_imputation_from_3_5_classes_H2O_site")
+
+x_train_no_lime_imputation_from_3_5_classes_site <- prepare_x(train, lime_imputed_3_5 == FALSE & pH_origin != "site", file_name = "no_lime_imputation_from_3_5_classes_site")
+y_train_no_lime_imputation_from_3_5_classes_site  <- prepare_y(train,lime_imputed_3_5 == FALSE & pH_origin != "site", file_name = "no_lime_imputation_from_3_5_classes_site")
+weights_no_lime_imputation_from_3_5_classes_site  <- prepare_weights(train, lime_imputed_3_5 == FALSE & pH_origin != "site", file_name = "no_lime_imputation_from_3_5_classes_site")
+```
+
+```{r}
+nrow(x_train_full_imp)
+nrow(x_train_no_site)
+nrow(x_train_no_site_H2O)
+nrow(x_train_no_lime_imputation)
+nrow(x_train_no_lime_imputation_from_lime_classes)
+nrow(x_train_no_lime_imputation_from_3_5_classes)
+```
+
+
+
+# Other
+
 # Create a table of imputation scenarios
 ```{r}
 print("No lime imp | No pH imp | ph h20 | ph site")
@@ -1203,5 +1539,8 @@ df_map2 <- st_as_sf(x = df_map2,
 st_write(df_map2, "../data/pH_lime_horizon_1_points.shp", append=FALSE)
 
 ```
+
+
+
 
 
