@@ -36,6 +36,7 @@ results_validation, results_test = train.perform_moodel_training_with_tuning(imp
                                     results_test=results_test,
                                     include_weigths = True, 
                                     include_lime_ph_penalty = True, 
+                                    penatly_form = "quadratic", 
                                     lambda_penalty = 1)
 
 
@@ -46,7 +47,8 @@ results_validation, results_test = train.perform_moodel_training_with_tuning(imp
                                     results_validation=results_validation,
                                     results_test=results_test,
                                     include_weigths = True, 
-                                    include_lime_ph_penalty = True, 
+                                    include_lime_ph_penalty = True,
+                                    penatly_form = "quadratic", 
                                     lambda_penalty = 0.5)
 
 
@@ -58,6 +60,7 @@ results_validation, results_test = train.perform_moodel_training_with_tuning(imp
                                     results_test=results_test,
                                     include_weigths = True, 
                                     include_lime_ph_penalty = True, 
+                                    penatly_form = "quadratic",
                                     lambda_penalty = 0.1)
 
 results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
@@ -67,7 +70,8 @@ results_validation, results_test = train.perform_moodel_training_with_tuning(imp
                                     results_validation=results_validation,
                                     results_test=results_test,
                                     include_weigths = True,  
-                                    include_lime_ph_penalty = True, 
+                                    include_lime_ph_penalty = True,
+                                    penatly_form = "quadratic", 
                                     lambda_penalty = 0.05)
 
 results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
@@ -78,6 +82,7 @@ results_validation, results_test = train.perform_moodel_training_with_tuning(imp
                                     results_test=results_test,
                                     include_weigths = True, 
                                     include_lime_ph_penalty = True, 
+                                    penatly_form = "quadratic",
                                     lambda_penalty = 0.01)
 
 results_validation, results_test = train.perform_moodel_training_with_tuning(imputation_scenario = "no_lime_imputation_from_3_5_classes", 
@@ -88,6 +93,7 @@ results_validation, results_test = train.perform_moodel_training_with_tuning(imp
                                     results_test=results_test,
                                     include_weigths = True,
                                     include_lime_ph_penalty = True, 
+                                    penatly_form = "quadratic",
                                     lambda_penalty = 0.005)
 
 
@@ -99,6 +105,7 @@ results_validation, results_test = train.perform_moodel_training_with_tuning(imp
                                     results_test=results_test,
                                     include_weigths = True, 
                                     include_lime_ph_penalty = True, 
+                                    penatly_form = "quadratic",
                                     lambda_penalty = 0.001)
 
 

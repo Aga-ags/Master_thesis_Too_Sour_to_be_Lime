@@ -1060,7 +1060,7 @@ print(scaling_params)
 print(processed_data)
 
 # Optional: write to CSV
-write.csv(scaling_params, "scaling_parameters.csv", row.names = FALSE)
+write.csv(scaling_params, "./data/processed_data/scaling_parameters.csv", row.names = FALSE)
 
 ```
 

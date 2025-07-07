@@ -19,7 +19,7 @@ library("ggpubr")
 ## Functions for evaluating accuracy
 ```{r}
 # Pivot to longer 
-scaling_parameters <- read.csv(file= "scaling_parameters.csv")
+scaling_parameters <- read.csv(file= "./data/processed_data/scaling_parameters.csv")
 
 ph_mean <- scaling_parameters$mean[scaling_parameters$variable=="pH"]
 ph_std <- scaling_parameters$sd[scaling_parameters$variable=="pH"]
@@ -441,7 +441,7 @@ analyze_output(lambda_df_lin, outcome = "lime")
 ```{r }
 # Transform the models into the format for consistency evaluation 
 # Prepare parameters for de-scaling pH and lime content
-scaling_parameters <- read.csv(file= "scaling_parameters.csv")
+scaling_parameters <- read.csv(file= "./data/processed_data/scaling_parameters.csv")
 
 ph_mean <- scaling_parameters$mean[scaling_parameters$variable=="pH"]
 ph_std <- scaling_parameters$sd[scaling_parameters$variable=="pH"]
@@ -623,7 +623,7 @@ ggsave(file = "../Figures/pred_vs_observed_dist_best_test.pdf")
 ## Consitency
 ```{r}
 # Prepare parameters for de-scaling pH and lime content
-scaling_parameters <- read.csv(file= "scaling_parameters.csv")
+scaling_parameters <- read.csv(file= "./data/processed_data/scaling_parameters.csv")
 
 ph_mean <- scaling_parameters$mean[scaling_parameters$variable=="pH"]
 ph_std <- scaling_parameters$sd[scaling_parameters$variable=="pH"]

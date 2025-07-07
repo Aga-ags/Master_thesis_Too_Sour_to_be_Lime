@@ -271,7 +271,7 @@ df_depth_60 <- df_arable_with_OBCs_values|>
 
 ```{r standardize}
 # Prepare parameters for standardizing the covariates
-scaling_parameters <- read.csv(file= "scaling_parameters.csv")
+scaling_parameters <- read.csv(file= "./data/processed_data/scaling_parameters.csv")
 scaling_parameters
 # Convert scaling_df to named vectors for easy access
 means <- setNames(scaling_parameters$mean, scaling_parameters$variable)
@@ -404,7 +404,7 @@ model_names <- model_names[sapply(model_names, function(m) {
 model_names
 
 # load scaling parameters to return to observed units
-scaling_parameters <- read.csv(file= "scaling_parameters.csv")
+scaling_parameters <- read.csv(file= "./data/processed_data/scaling_parameters.csv")
 
 ph_mean <- scaling_parameters$mean[scaling_parameters$variable=="pH"]
 ph_std <- scaling_parameters$sd[scaling_parameters$variable=="pH"]
@@ -469,7 +469,7 @@ model_names <- model_names[sapply(model_names, function(m) {
 model_names
 
 # load scaling parameters to return to observed units
-scaling_parameters <- read.csv(file= "scaling_parameters.csv")
+scaling_parameters <- read.csv(file= "./data/processed_data/scaling_parameters.csv")
 
 ph_mean <- scaling_parameters$mean[scaling_parameters$variable=="pH"]
 ph_std <- scaling_parameters$sd[scaling_parameters$variable=="pH"]
@@ -506,4 +506,3 @@ r <- rast(df_pred_60, type = "xyz", crs = "EPSG:2056" )
 out_path <- file.path(paste0("../data/prediction_map_raster_60.tif"))
 writeRaster(r, out_path, overwrite = TRUE)
 ```
-

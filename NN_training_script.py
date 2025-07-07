@@ -1,3 +1,4 @@
+# import packages 
 import pandas as pd
 import numpy as np
 
@@ -29,10 +30,12 @@ y_test = pd.read_csv("../data/prepared_data/y_test.csv")
 results_validation = y_val
 results_test = y_test
 
+# define custom activation function, equvalent to relu (max(0,x)) on unstandatdized lime content
 def custom_relu(x):
-    return tf.where(x > - 0.5062935, x, tf.constant(- 0.5062935, dtype=x.dtype))
+    return tf.where(x > - 0.5062935, x, tf.constant(- 0.5062935, dtype=x.dtype)) # - 0.5062935 is equal to 0 lime content post standarization
 
-# custom objective for zero - inflation
+# custom objective for zero - inflation: average of zero and non-zero observations. 
+# Not used in the final thesis, as it went beyond scope.
 def zero_inflated_mse_loss(y_true, y_pred):
     # Due to standarization lime = 0 is now roughly equal to - 0.5062935, which is not a nice intiger to compare to, therefore we set a tolerance level
     tolerance = 1e-4
@@ -61,23 +64,25 @@ def zero_inflated_mse_loss(y_true, y_pred):
 
     return (mse_zero + mse_gt_zero) / 2.0
 
-# def lime_ph_penalty_loss(lambda_penalty=1.0):
-#     def loss(y_true, y_pred):
-#         output_pH = y_pred[:, 0]
-#         output_lime = y_pred[:, 1]
+# Define linear penalty term 
+def penalty_term_linear(lambda_penalty=1.0):
+    def loss(y_true, y_pred):
+        output_pH = y_pred[:, 0]
+        output_lime = y_pred[:, 1]
 
-#         # Mask where pH < 6.5
-#         mask = tf.cast(tf.less(output_pH, -0.115569), tf.float32)  # -0.115568 is equvalent to pH 6.5 post standarization
-#         # Compute penalty
-#         masked_lime = output_lime * mask # extract lime values for which predicted pH is below 6.5
-#         mask_sum = tf.reduce_sum(mask) # get number of cases where pH < 6.5 occurs
-#         epsilon = 1e-6
-#         penalty = tf.reduce_sum(tf.abs(masked_lime + 0.5062935)) / (mask_sum + epsilon)
+        # Mask where pH < 6.5
+        mask = tf.cast(tf.less(output_pH, -0.115569), tf.float32)  # -0.115568 is equvalent to pH 6.5 post standarization
+        # Compute penalty
+        masked_lime = output_lime * mask # extract lime values for which predicted pH is below 6.5
+        mask_sum = tf.reduce_sum(mask) # get number of cases where pH < 6.5 occurs
+        epsilon = 1e-6
+        penalty = tf.reduce_sum(tf.abs(masked_lime + 0.5062935)) / (mask_sum + epsilon)
 
-#         return lambda_penalty * penalty
-#     return loss
+        return lambda_penalty * penalty
+    return loss
 
-def lime_ph_penalty_loss(lambda_penalty=1.0):
+# Define quadratic penalty term 
+def penalty_term_quadratic(lambda_penalty=1.0):
     def loss(y_true, y_pred):
         output_pH = y_pred[:, 0]
         output_lime = y_pred[:, 1]
@@ -91,6 +96,7 @@ def lime_ph_penalty_loss(lambda_penalty=1.0):
         return lambda_penalty * penalty
     return loss
 
+# Convert dictonary of loss functions into a list of objectives for the Bayesian Tuner
 def create_objectives_from_loss(loss_function, list_of_outputs, include_lime_ph_penalty):
     if len(list_of_outputs) == 1: 
         objectives_list = [kt.Objective(f"val_loss", direction="min")]
@@ -104,7 +110,7 @@ def create_objectives_from_loss(loss_function, list_of_outputs, include_lime_ph_
     return objectives_list
 
 # Build the neural network architecture 
-def build_model(hp, list_of_outputs, x_train, loss_function, include_dropout = False, include_lime_ph_penalty = False, lambda_penalty = 0.001, include_reg = False):
+def build_model(hp, list_of_outputs, x_train, loss_function, include_dropout = False, include_lime_ph_penalty = False, penatly_form = "linear", lambda_penalty = 0.001, include_reg = False):
     inputs = Input(shape=(x_train.shape[1],), name="input")
     x = inputs
 
@@ -156,22 +162,26 @@ def build_model(hp, list_of_outputs, x_train, loss_function, include_dropout = F
         combined_outputs = Concatenate(name="combined_output")([output_ph, output_lime])
         output_dict["combined_output"] = combined_outputs
         metric_dict["combined_output"] = []
-        loss_function["combined_output"] = lime_ph_penalty_loss(lambda_penalty)
+        if penatly_form == "linear":
+            loss_function["combined_output"] = penalty_term_linear(lambda_penalty)
+        if penatly_form == "quadratic":
+            loss_function["combined_output"] = penalty_term_quadratic(lambda_penalty)
 
     # Create the model instance   
     model = Model(inputs=inputs, outputs=output_dict)
 
+    # Compile the model
     model.compile(
         optimizer=keras.optimizers.Adam(
             hp.Choice("learning_rate", [1e-2, 1e-3, 1e-4])
         ),
-        loss= loss_function, #if a dictionary, by default it adds the two 
+        loss= loss_function, # for a dictionary, loss beomes a sum of loss of each key
         metrics = metric_dict
     )
 
     return model
 
-# define perform model training with parameter tunning
+# define how to perform model training with parameter tunning
 def perform_moodel_training_with_tuning(imputation_scenario, 
                                         model_name, 
                                         list_of_outputs, 
@@ -182,6 +192,7 @@ def perform_moodel_training_with_tuning(imputation_scenario,
                                         include_dropout = False,
                                         include_reg = False, 
                                         include_lime_ph_penalty = False, 
+                                        penatly_form = "linear",
                                         lambda_penalty = 0.001, 
                                         epochs = 100, 
                                         batch_size = 32):
@@ -207,6 +218,7 @@ def perform_moodel_training_with_tuning(imputation_scenario,
                                loss_function = loss_function, 
                                include_dropout = include_dropout, 
                                include_lime_ph_penalty = include_lime_ph_penalty, 
+                               penatly_form = penatly_form, 
                                lambda_penalty = lambda_penalty, 
                                include_reg = include_reg),
         objective = create_objectives_from_loss(loss_function, list_of_outputs, include_lime_ph_penalty), 
@@ -267,7 +279,7 @@ def perform_moodel_training_with_tuning(imputation_scenario,
     print("Best model metrics")
     print(metrics)
     
-    # save the predicted values for vizualization
+    # save the predicted values for evaluation
     y_pred_val = best_model.predict(x_val)
     y_pred_test = best_model.predict(x_test)
 
