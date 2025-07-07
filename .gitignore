@@ -7,3 +7,4 @@
 
 keras_tuner_logs/
 tuning_results/
+data/
